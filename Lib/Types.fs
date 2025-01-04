@@ -129,8 +129,8 @@ type Element =
 }
 
 let elementInfo = Map [
-    Element.H,{Number = 1; Symbol = "H"; Name = "Hydrogen"; Mass = 1.00794; DisplayColor = "#ffffff"; ElectronConfiguration = "1"; Electronegativity = Some 2.2; ElectronAffinity = Some -73; Radius = Some 37; MinOxidation = -1; MaxOxidation = 1}
-    Element.He,{Number = 2; Symbol = "He"; Name = "Helium"; Mass = 4.002602; DisplayColor = "#d9ffff"; ElectronConfiguration = "2"; Electronegativity = None; ElectronAffinity = Some 0; Radius = Some 32; MinOxidation = 0; MaxOxidation = 0}
+    Element.H,{Number = 1; Symbol = "H"; Name = "Hydrogen"; Mass = 1.00794; DisplayColor = "#ffffff"; ElectronConfiguration = "1s1"; Electronegativity = Some 2.2; ElectronAffinity = Some -73; Radius = Some 37; MinOxidation = -1; MaxOxidation = 1}
+    Element.He,{Number = 2; Symbol = "He"; Name = "Helium"; Mass = 4.002602; DisplayColor = "#d9ffff"; ElectronConfiguration = "1s2"; Electronegativity = None; ElectronAffinity = Some 0; Radius = Some 32; MinOxidation = 0; MaxOxidation = 0}
     Element.Li,{Number = 3; Symbol = "Li"; Name = "Lithium"; Mass = 6.941; DisplayColor = "#cc80ff"; ElectronConfiguration = "[He] 2s1"; Electronegativity = Some 0.98; ElectronAffinity = Some -60; Radius = Some 134; MinOxidation = 0; MaxOxidation = 1}
     Element.Be,{Number = 4; Symbol = "Be"; Name = "Beryllium"; Mass = 9.012182; DisplayColor = "#c2ff00"; ElectronConfiguration = "[He] 2s2"; Electronegativity = Some 1.57; ElectronAffinity = Some 0; Radius = Some 90; MinOxidation = 0; MaxOxidation = 2}
     Element.B,{Number = 5; Symbol = "B"; Name = "Boron"; Mass = 10.811; DisplayColor = "#ffb5b5"; ElectronConfiguration = "[He] 2s2 2p1"; Electronegativity = Some 2.04; ElectronAffinity = Some -27; Radius = Some 82; MinOxidation = 0; MaxOxidation = 3}
