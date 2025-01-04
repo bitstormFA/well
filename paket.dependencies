@@ -1,0 +1,16 @@
+source https://api.nuget.org/v3/index.json
+
+nuget coverlet.collector 
+nuget FSharp.Core
+nuget Microsoft.NET.Test.Sdk 
+nuget RDKit2DotNetStandard
+nuget xunit 
+nuget xunit.runner.visualstudio 
+
+group TorchSharp.Windows
+    source https://nuget.org/api/v2
+    nuget TorchSharp-cuda-windows
+
+group TorchSharp.Linux
+    source https://nuget.org/api/v2
+    nuget TorchSharp-cuda-windows

@@ -1,0 +1,40 @@
+﻿### VisualStudioCode template
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+!.vscode/*.code-snippets
+
+# Local History for Visual Studio Code
+.history/
+
+# Built Visual Studio Code Extensions
+*.vsix
+
+### DotnetCore template
+# .NET Core build folders
+bin/
+obj/
+
+
+### fsharp template
+lib/debug
+lib/release
+Debug
+*.suo
+*.user
+obj
+bin
+/build/
+*.exe
+!.paket/paket.bootstrapper.exe
+.ionide/
+.fake
+
+.idea/
+
+# File-based project format
+*.iws
+
+packages
