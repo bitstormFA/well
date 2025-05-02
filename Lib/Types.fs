@@ -1,25 +1,18 @@
 module Lib.Types
 
+open System.Collections.Generic
+open Microsoft.FSharp.Reflection
+
 type Element =
-    | H  = 1  | He = 2 | Li = 3  | Be = 4 | B = 5 | C = 6 | N = 7 | O = 8 | F = 9 | Ne = 10
-    | Na = 11 | Mg = 12 | Al = 13| Si = 14 | P = 15 | S = 16 | Cl = 17 | Ar = 18 | K = 19 | Ca = 20
-    | Sc = 21 | Ti = 22 | V = 23 | Cr = 24 | Mn = 25 | Fe = 26 | Co = 27 | Ni = 28 | Cu = 29 | Zn = 30
-    | Ga = 31 | Ge = 32 | As = 33| Se = 34 | Br = 35 | Kr = 36 | Rb = 37 | Sr = 38 | Y = 39 | Zr = 40
-    | Nb = 41 | Mo = 42 | Tc = 43| Ru = 44 | Rh = 45 | Pd = 46 | Ag = 47 | Cd = 48 | In = 49 | Sn = 50
-    | Sb = 51 | Te = 52 | I = 53 | Xe = 54 | Cs = 55 | Ba = 56 | La = 57 | Ce = 58 | Pr = 59 | Nd = 60
-    | Pm = 61 | Sm = 62 | Eu = 63| Gd = 64 | Tb = 65 | Dy = 66 | Ho = 67 | Er = 68 | Tm = 69 | Yb = 70
-    | Lu = 71 | Hf = 72 | Ta = 73| W = 74 | Re = 75 | Os = 76 | Ir = 77 | Pt = 78 | Au = 79 | Hg = 80
-    | Tl = 81 | Pb = 82 | Bi = 83| Po = 84 | At = 85 | Rn = 86 | Fr = 87 | Ra = 88 | Ac = 89 | Th = 90
-    | Pa = 91 | U = 92  | Np = 93| Pu = 94 | Am = 95 | Cm = 96 | Bk = 97 | Cf = 98 | Es = 99 | Fm = 100
-    | Md = 101| No = 102| Lr = 103| Rf = 104 | Db = 105 | Sg = 106 | Bh = 107 | Hs = 108 | Mt = 109 | Ds = 110
-    | Rg = 111| Cn = 112 
+    |H|He|Li|Be|B|C|N|O|F|Ne
+    |Na|Mg|Al|Si|P|S|Cl|Ar
+    |K|Ca|Sc|Ti|V|Cr|Mn|Fe
+    |Co|Ni|Cu|Zn|Ga|Ge|As|Se|Br|Kr|Rb|Sr|Y|Zr|Nb|Mo|Tc|Ru|Rh|Pd|Ag|Cd|In
+    |Sn|Sb|Te|I|Xe|Cs|Ba|La|Ce|Pr|Nd|Pm|Sm|Eu|Gd|Tb|Dy|Ho|Er|Tm|Yb|Lu|Hf
+    |Ta|W|Re|Os|Ir|Pt|Au|Hg|Tl|Pb|Bi|Po|At|Rn|Fr|Ra|Ac|Th|Pa|U|Np|Pu|Am
+    |Cm|Bk|Cf|Es|Fm|Md|No|Lr|Rf|Db|Sg|Bh|Hs|Mt|Ds|Rg|Cn|UNK
 
-let tryStringToElement (value: string) : Element option =
-    match Element.TryParse<'T>(value, true) with
-    | (true, result) -> Some result
-    | _ -> None
-
- type ElementInfo = {
+type ElementInfo = {
     Number: int
     Symbol: string
     Name: string
@@ -32,6 +25,102 @@ let tryStringToElement (value: string) : Element option =
     MinOxidation: int 
     MaxOxidation: int 
 }
+
+let tryStringToElement (elementSymbol: string) : Element option =
+    try
+        let unionType = typeof<Element>
+        // Find the union case info matching the input string (case-sensitive)
+        match FSharpType.GetUnionCases(unionType) |> Array.tryFind (fun caseInfo -> caseInfo.Name = elementSymbol) with
+        | Some matchingCaseInfo ->
+            // All Element cases are simple (no fields/arguments)
+            if matchingCaseInfo.GetFields().Length = 0 then
+                // Construct the union case instance (null args for simple cases)
+                let duCaseValue = FSharpValue.MakeUnion(matchingCaseInfo, null)
+                Some (duCaseValue :?> Element) // Cast the object back to Element
+            else
+                None
+        | None ->
+            // No matching case name found
+            None
+    with
+    | ex ->
+        None
+        
+let stringToElement elementSymbol =
+    match tryStringToElement elementSymbol with
+    | Some symbol -> symbol
+    | None -> Element.UNK
+        
+let allElementCasesAsStringList () : list<string> =
+    try
+        let unionType = typeof<Element>
+        FSharpType.GetUnionCases(unionType)
+        |> Array.map (fun caseInfo -> caseInfo.Name)
+        |> List.ofArray
+    with
+    | ex ->
+        eprintfn "Error getting element case names: %s" ex.Message
+        [] // Return empty list on error
+
+type BondType =
+    | Single
+    | Double
+    | Triple
+    | Quadruple
+    | Aromatic
+    | Up
+    | Down
+    | Unknown
+    
+type Chirality =
+    | Clockwise
+    | CounterClockwise
+    
+    
+type Atom =
+    {
+        Symbol: Element
+        Isotope: int option
+        Chirality: Chirality option
+        Hydrogens: int option
+        Charge: int option
+        IsAromatic: bool 
+        AtomClass: int option
+    }
+    
+type Bond =
+    {
+        BondType: BondType
+        ConnectedAtomIndex: int
+    }
+
+ 
+
+let bondMap= Map [
+    "-", BondType.Single
+    "=", BondType.Double
+    "#", BondType.Triple
+    "$", BondType.Quadruple
+    ":", BondType.Aromatic
+    "/", BondType.Up
+    @"\\", BondType.Down 
+]
+
+type ParsedAtom =
+    {
+        AtomInfo: Atom
+        Index: int
+        mutable Bonds: ResizeArray<Bond>
+        mutable RingClosures: Dictionary<int, BondType option>
+    }
+
+type MoleculeGraph =
+    {
+        Atoms: Atom array
+        Adjecency: Map<int, list<BondType * int>>
+    }
+    
+type SmilesParseResult = MoleculeGraph list
 
 let elementInfo = Map [
     Element.H,{Number = 1; Symbol = "H"; Name = "Hydrogen"; Mass = 1.00794; DisplayColor = "#ffffff"; ElectronConfiguration = "1s1"; Electronegativity = Some 2.2; ElectronAffinity = Some -73; Radius = Some 37; MinOxidation = -1; MaxOxidation = 1}

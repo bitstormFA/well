@@ -1,2 +1,5 @@
 FSharp.Core
 RDKit2DotNetStandard
+fparsec
+fparsec-pipes
+FSharpx.Collections

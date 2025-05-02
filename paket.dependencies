@@ -1,7 +1,10 @@
 source https://api.nuget.org/v3/index.json
 
 nuget coverlet.collector 
+nuget fparsec
+nuget fparsec-pipes
 nuget FSharp.Core
+nuget FSharpx.Collections
 nuget Microsoft.NET.Test.Sdk 
 nuget RDKit2DotNetStandard
 nuget xunit 
