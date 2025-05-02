@@ -5,6 +5,8 @@ nuget fparsec
 nuget fparsec-pipes
 nuget FSharp.Core
 nuget FSharpx.Collections
+nuget FsUnit
+nuget FsUnit.xunit
 nuget Microsoft.NET.Test.Sdk 
 nuget RDKit2DotNetStandard
 nuget xunit 
