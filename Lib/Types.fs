@@ -3,6 +3,8 @@ module Lib.Types
 open System.Collections.Generic
 open Microsoft.FSharp.Reflection
 
+type Smiles = string
+
 type Element =
     |H|He|Li|Be|B|C|N|O|F|Ne
     |Na|Mg|Al|Si|P|S|Cl|Ar
@@ -11,6 +13,21 @@ type Element =
     |Sn|Sb|Te|I|Xe|Cs|Ba|La|Ce|Pr|Nd|Pm|Sm|Eu|Gd|Tb|Dy|Ho|Er|Tm|Yb|Lu|Hf
     |Ta|W|Re|Os|Ir|Pt|Au|Hg|Tl|Pb|Bi|Po|At|Rn|Fr|Ra|Ac|Th|Pa|U|Np|Pu|Am
     |Cm|Bk|Cf|Es|Fm|Md|No|Lr|Rf|Db|Sg|Bh|Hs|Mt|Ds|Rg|Cn|UNK
+
+let elementNames = FSharpType.GetUnionCases(typeof<Element>) 
+                   |> Array.map (fun case -> string(case.Name))
+
+let elementMap:Map<string, Element> = FSharpType.GetUnionCases(typeof<Element>) |>
+                                      Array.map (fun caseInfo ->
+                                         let keywordString = caseInfo.Name
+                                         let useName = if keywordString = "UNK" then
+                                                           "*"
+                                                       else
+                                                           keywordString
+                                         let duCase = FSharpValue.MakeUnion(caseInfo, [||]) :?> Element
+                                         (useName, duCase)) |> Map.ofArray
+                   
+let twoLetterElementNames = elementNames |> Array.filter (fun x -> x.Length = 2)
 
 type ElementInfo = {
     Number: int
@@ -26,25 +43,17 @@ type ElementInfo = {
     MaxOxidation: int 
 }
 
+let capitalizeFirstChar (s: string) =
+    if System.String.IsNullOrEmpty(s) then
+        s // Or "" depending on desired behavior for null/empty
+    else
+        let firstChar = System.Char.ToUpper(s.[0])
+        let restOfString = s.[1..]
+        string firstChar + restOfString
+        
 let tryStringToElement (elementSymbol: string) : Element option =
-    try
-        let unionType = typeof<Element>
-        // Find the union case info matching the input string (case-sensitive)
-        match FSharpType.GetUnionCases(unionType) |> Array.tryFind (fun caseInfo -> caseInfo.Name = elementSymbol) with
-        | Some matchingCaseInfo ->
-            // All Element cases are simple (no fields/arguments)
-            if matchingCaseInfo.GetFields().Length = 0 then
-                // Construct the union case instance (null args for simple cases)
-                let duCaseValue = FSharpValue.MakeUnion(matchingCaseInfo, null)
-                Some (duCaseValue :?> Element) // Cast the object back to Element
-            else
-                None
-        | None ->
-            // No matching case name found
-            None
-    with
-    | ex ->
-        None
+    let firstUpperName =capitalizeFirstChar elementSymbol
+    elementMap.TryFind(firstUpperName)
         
 let stringToElement elementSymbol =
     match tryStringToElement elementSymbol with
@@ -59,7 +68,7 @@ let allElementCasesAsStringList () : list<string> =
         |> List.ofArray
     with
     | ex ->
-        eprintfn "Error getting element case names: %s" ex.Message
+        eprintfn $"Error getting element case names: %s{ex.Message}"
         [] // Return empty list on error
 
 type BondType =
@@ -87,14 +96,17 @@ type Atom =
         IsAromatic: bool 
         AtomClass: int option
     }
+    static member Default =
+        {
+            Symbol = Element.C
+            Isotope = None
+            Chirality = None
+            Hydrogens = None
+            Charge = None
+            IsAromatic = false
+            AtomClass = None
+        }
     
-type Bond =
-    {
-        BondType: BondType
-        ConnectedAtomIndex: int
-    }
-
- 
 
 let bondMap= Map [
     "-", BondType.Single
@@ -106,21 +118,6 @@ let bondMap= Map [
     @"\\", BondType.Down 
 ]
 
-type ParsedAtom =
-    {
-        AtomInfo: Atom
-        Index: int
-        mutable Bonds: ResizeArray<Bond>
-        mutable RingClosures: Dictionary<int, BondType option>
-    }
-
-type MoleculeGraph =
-    {
-        Atoms: Atom array
-        Adjecency: Map<int, list<BondType * int>>
-    }
-    
-type SmilesParseResult = MoleculeGraph list
 
 let elementInfo = Map [
     Element.H,{Number = 1; Symbol = "H"; Name = "Hydrogen"; Mass = 1.00794; DisplayColor = "#ffffff"; ElectronConfiguration = "1s1"; Electronegativity = Some 2.2; ElectronAffinity = Some -73; Radius = Some 37; MinOxidation = -1; MaxOxidation = 1}
@@ -236,3 +233,11 @@ let elementInfo = Map [
     Element.Rg,{Number = 111; Symbol = "Rg"; Name = "Roentgenium"; Mass = 280; DisplayColor = ""; ElectronConfiguration = "[Rn].5f14.6d10.7s1"; Electronegativity = None; ElectronAffinity = None; Radius = None; MinOxidation = 0; MaxOxidation = 0}
     Element.Cn,{Number = 112; Symbol = "Cn"; Name = "Copernicium"; Mass = 285; DisplayColor = ""; ElectronConfiguration = "[Rn].5f14.6d10.7s2"; Electronegativity = None; ElectronAffinity = None; Radius = None; MinOxidation = 0; MaxOxidation = 0}
 ]
+
+let aliphaticOrganic =
+    [ "Cl", Element.Cl; "Br", Element.Br; "B", Element.B; "C", Element.B; "N", Element.N; "O", Element.O
+      "S", Element.S; "P", Element.P; "F", Element.F; "I", Element.I ] |> Map.ofList
+
+let aromaticOrganic =
+                       ["b", Element.B; "c", Element.C; "n", Element.N; "o", Element.O
+                        "s", Element.S; "p", Element.P] |> Map.ofList

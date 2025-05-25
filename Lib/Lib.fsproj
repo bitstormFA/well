@@ -7,8 +7,8 @@
   <ItemGroup>
     <Compile Include="Library.fs" />
     <Compile Include="Types.fs" />
-    <Compile Include="Smiles.fs" />
     <Compile Include="Graph.fs" />
+    <Compile Include="Smiles.fs" />
   </ItemGroup>
   <PropertyGroup Condition="'$(OS)' == 'Windows_NT'">
     <PaketGroup>TorchSharp.Windows</PaketGroup>
