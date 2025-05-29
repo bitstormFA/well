@@ -1,6 +1,7 @@
 module Lib.Types
 
 open System.Collections.Generic
+open System.Text
 open Microsoft.FSharp.Reflection
 
 type Smiles = string
@@ -106,6 +107,20 @@ type Atom =
             IsAromatic = false
             AtomClass = None
         }
+    override this.ToString() =
+        let result = StringBuilder()
+        if this.Isotope.IsSome then result.Append(this.Isotope.Value) |> ignore
+        if this.Chirality.IsSome then result.Append(this.Chirality) |> ignore
+        let symbol = if this.IsAromatic then
+                         this.Symbol.ToString().ToLower()
+                     else
+                         this.Symbol.ToString()
+        result.Append(symbol) |> ignore
+        if this.Hydrogens.IsSome then result.Append("H") |> ignore; result.Append(this.Hydrogens) |> ignore
+        if this.Charge.IsSome then result.Append(this.Charge.Value) |> ignore
+        result.ToString()
+        
+        
     
 
 let bondMap= Map [

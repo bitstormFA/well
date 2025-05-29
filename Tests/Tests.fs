@@ -1,5 +1,6 @@
 ﻿module Tests
 
+open FsUnitTyped
 open Lib.Types
 open Xunit
 open FsUnit 
@@ -38,5 +39,13 @@ let ``Add nodes and edges to graph`` () =
 [<Fact>]
 let ``Test Smiles Parser`` () =
     let input = "CC(=O)Oc1ccccc1C(O)=O"
-    let res = runParser chain input
-    printfn("")
+    let res = runParser smiles input
+    res |> should not' (be Null)
+    let resVal = res.Value
+    resVal.Length |> should equal 1
+    let aspirinMol = resVal[0]
+    let plot = dotGraph aspirinMol
+    plot.Length |> shouldBeGreaterThan 0
+
+    
+    

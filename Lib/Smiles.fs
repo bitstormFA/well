@@ -12,8 +12,7 @@ open System.Collections.Generic
 type RingClosure =
     { 
       atomId: NodeID
-      bondType: BondType
-      }
+    }
 
 
 type ParseState = {
@@ -32,7 +31,9 @@ type ParseState = {
     member this.addAtomDefault a =
         match this.connectID with
         | Some connectTo ->
-            match (addNodeAt a connectTo this.getCurrentBond this.mol) with
+            let connectAtom = getNodeData connectTo this.mol
+            let bondType = if this.currentBond.IsNone && connectAtom.Value.IsAromatic && a.IsAromatic then BondType.Aromatic else this.getCurrentBond
+            match (addNodeAt a connectTo bondType this.mol) with
             | Some (newEdge, newNodeID) -> this.connectID <- Some newNodeID; this.currentBond <- None; Some newNodeID
             | None -> None  
         | None ->
@@ -52,14 +53,15 @@ type ParseState = {
         | false -> raise (IndexOutOfRangeException("Closing branch without any open"))
         
     member this.openRing ringID =
-        let rc = {atomId=this.connectID.Value; bondType=this.getCurrentBond}
+        let rc = {atomId=this.connectID.Value}
         this.ringConnect.Add(ringID, rc)
         
     member this.closeRing ringID =
         match this.ringConnect.ContainsKey ringID with
         | true ->
             let rc = this.ringConnect[ringID]
-            let edge = {fromID=rc.atomId; toID=this.connectID.Value; edgeData=rc.bondType}
+            let bondType = if this.currentBond.IsNone && this.mol.NodeData.[rc.atomId].IsAromatic && this.mol.NodeData.[this.connectID.Value].IsAromatic then BondType.Aromatic else this.getCurrentBond
+            let edge = {fromID=rc.atomId; toID=this.connectID.Value; edgeData=bondType}
             addEdge edge this.mol |> ignore
         | false -> raise (IndexOutOfRangeException($"Trying to close ring with id {ringID} that isn't open"))
 

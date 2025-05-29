@@ -1,6 +1,7 @@
 module Lib.Graph
 
 open System
+open System.Text
 open FSharpx.Collections
 open System.Collections.Generic
 open Lib.Types
@@ -47,7 +48,18 @@ let orderNodeIDs (node1: NodeID) (node2: NodeID) : NodeID * NodeID =
 
 let numberOfNodes (graph: MutableGraph<_, _>) : int = graph.NodeData.Count
 
-let edgesFromGraph (graph: MutableGraph<'NodeData, 'EdgeData>) : Edge<'EdgeData> seq =
+let getNodeData nodeID graph =
+    match graph.NodeData.ContainsKey nodeID with
+    | true -> Some graph.NodeData[nodeID]
+    | false -> None
+    
+let getNodeLabel nodeID  graph =
+    let nodeData = getNodeData nodeID graph
+    match nodeData with
+    | Some nd -> string(nd)
+    | None -> ""
+
+let getEdges (graph: MutableGraph<_, 'EdgeData>) : Edge<'EdgeData> seq =
     graph.AdjecencyList |>
     Seq.map (|KeyValue|)|>
     Seq.map (fun (nodeID, dict) ->
@@ -60,39 +72,28 @@ let edgesFromGraph (graph: MutableGraph<'NodeData, 'EdgeData>) : Edge<'EdgeData>
     |> Seq.concat
 
 let numberOfEdges (graph: MutableGraph<_, _>) =
-    graph |> edgesFromGraph |> Seq.length   
+    graph |> getEdges |> Seq.length   
     
-let addNode (nodeData:'NodeData) (graph: MutableGraph<'NodeData, 'EdgeData>) : NodeID =
+let addNode (nodeData:'NodeData) (graph: MutableGraph<_, _>) : NodeID =
     let newID = graph.NodeIDFactory()
     graph.NodeData.[newID] <- nodeData
     graph.AdjecencyList.[newID] <- Dictionary()
     newID
     
-let removeNode (nodeId:NodeID) (graph: MutableGraph<'NodeData, 'EdgeData>) : bool =
+let removeNode (nodeId:NodeID) (graph: MutableGraph<_,_>) : bool =
     if not (graph.NodeData.ContainsKey(nodeId)) then false
     else
        graph.NodeData.Remove(nodeId) |> ignore
        graph.AdjecencyList.Remove(nodeId) |> ignore
-       graph.AdjecencyList |> Seq.map (|KeyValue|) |> Seq.filter (fun (k,v) -> v.ContainsKey nodeId) |> Seq.iter(fun (k,v) -> v.Remove nodeId |> ignore)             
+       graph.AdjecencyList |> Seq.map (|KeyValue|) |> Seq.filter (fun (_,v) -> v.ContainsKey nodeId) |> Seq.iter(fun (_,v) -> v.Remove nodeId |> ignore)             
        true
        
-let nodeAtIndex (nodeId:NodeID)(graph: MutableGraph<'NodeData, 'EdgeData>) : 'NodeData option =
+let nodeAtIndex (nodeId:NodeID)(graph: MutableGraph<_, _>) : 'NodeData option =
     match graph.NodeData.ContainsKey nodeId with
         | true -> Some graph.NodeData[nodeId]
         | false -> None 
     
-/// Adds a new node with the given data to the graph and connects it to an existing node using the specified edge data.
-/// Returns an option containing a tuple of the created edge and the ID of the new node, or None if the connection node ID does not exist.
-///
-/// Parameters:
-///   nodeData: The data to be associated with the new node.
-///   connectID: The ID of the existing node to which the new node is to be connected.
-///   edgeData: The data to be associated with the edge connecting the nodes.
-///   graph: The mutable graph to which the node is added.
-///
-/// Returns:
-///   Some (edge, newNodeID): A tuple containing the created edge and the ID of the newly added node, if the connection was successful.
-///   None: Indicates that the connectID was not found in the graph, and the operation failed.
+
 let addNodeAt (nodeData: 'NodeData) (connectID: NodeID) (edgeData: 'EdgeData) (graph: MutableGraph<'NodeData, 'EdgeData>) : (Edge<'EdgeData> * NodeID) option =
     if not (graph.NodeData.ContainsKey(connectID)) then None  // the node to which should be connected is unknown
     else
@@ -103,7 +104,6 @@ let addNodeAt (nodeData: 'NodeData) (connectID: NodeID) (edgeData: 'EdgeData) (g
         Some (edge, newNodeID)
 
             
-
 let addEdge (edge:Edge<'EdgeData>) (graph: MutableGraph<'NodeData, 'EdgeData>): bool =
     if graph.NodeData.ContainsKey(edge.fromID) && graph.NodeData.ContainsKey(edge.toID) then
         let n1Id, n2Id = orderNodeIDs edge.fromID edge.toID
@@ -122,3 +122,16 @@ let hasEdgeBetween (n1:NodeID) (n2: NodeID) (graph: MutableGraph<'NodeData, 'Edg
             false
             
 type MolGraph = MutableGraph<Atom, BondType>
+
+let dotGraph graph : string =               
+    let result = StringBuilder()
+    result.Append("graph {\n") |> ignore
+    graph.NodeData
+    |> Map.ofDict
+    |> Map.fold (fun (state:StringBuilder) k v -> state.Append($"node_{k} [label=\"{getNodeLabel k graph}\"];\n")) result |> ignore
+    getEdges graph
+    |> Seq.fold (fun (result:StringBuilder) edge -> result.Append($"node_{edge.fromID}--node_{edge.toID}[label=\"{edge.edgeData}\"];\n")) result |> ignore
+    result.Append("}\n") |> ignore
+    result.ToString()
+
+            
