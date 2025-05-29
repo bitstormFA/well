@@ -145,8 +145,6 @@ let closeBranch = %')' |> changeState (fun c (state:ParseState) ->
                                                  state.closeBranch
                                                  state)
 
-let dot: Parser<unit,ParseState> = %'.' >>% ()
+let chain = many (atom <|> openBranch <|> closeBranch <|> ringID <|> bond) >>. getUserState |>> _.mol 
 
-let chain = many (atom <|> openBranch <|> closeBranch <|> ringID <|> bond)
-
-                          
+let smiles =  sepBy chain (pstring ".") 
