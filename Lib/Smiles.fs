@@ -33,7 +33,7 @@ type ParseState = {
         | Some connectTo ->
             let connectAtom = getNodeData connectTo this.mol
             let bondType = if this.currentBond.IsNone && connectAtom.Value.IsAromatic && a.IsAromatic then BondType.Aromatic else this.getCurrentBond
-            match (addNodeAt a connectTo bondType this.mol) with
+            match (addNodeToNode a connectTo bondType this.mol) with
             | Some (newEdge, newNodeID) -> this.connectID <- Some newNodeID; this.currentBond <- None; Some newNodeID
             | None -> None  
         | None ->

@@ -47,5 +47,54 @@ let ``Test Smiles Parser`` () =
     let plot = dotGraph aspirinMol
     plot.Length |> shouldBeGreaterThan 0
 
+[<Fact>]
+let ``Test DFS2`` () =
+    let g:MutableGraph<string, string> = MutableGraph.Empty
+    let nID0 = addNode "n1" g
+    let nID1 = (addNodeToNode "n1" nID0 "e0" g).Value |> snd
+    let nID2 = (addNodeToNode "n2" nID1 "e1" g).Value |> snd
+    let nID3 = (addNodeToNode "n3" nID1 "e2" g).Value |> snd
+    let nID4 = (addNodeToNode "n4" nID2 "e3" g).Value |> snd
+    let nID5 = (addNodeToNode "n5" nID4 "e4" g).Value |> snd
+    let nID6 = (addNodeToNode "n6" nID5 "e5" g).Value |> snd
+    let nID7 = (addNodeToNode "n7" nID2 "e6" g).Value |> snd
+    let nID8 = (addNodeToNode "n8" nID3 "e7" g).Value |> snd
+    let nID9 = (addNodeToNode "n9" nID8 "e8" g).Value |> snd
+    addEdge {Edge.fromID=nID7; toID=nID5; edgeData="e8"} g |> ignore
+    addEdge {Edge.fromID=nID7; toID=nID5; edgeData="e8"} g |> ignore
     
-    
+    let dfsNodeList = dfs nID0 g
+    dfsNodeList |> shouldEqual [0;1;3;8;9;2;7;4;5;6]
+
+ 
+[<Fact>]
+let ``Test DFS`` () =
+    let g:MutableGraph<string, string> = MutableGraph.Empty
+    let nID1 = addNode "1" g
+    let nID2 = addNode "2" g
+    let nID3 = addNode "3" g
+    let edge1 = {fromID=nID1; toID=nID2; edgeData="e1"}
+    let edge2 = {fromID=nID2; toID=nID3; edgeData="e2"}
+    addEdge edge1 g |> ignore
+    addEdge edge2 g |> ignore
+
+    let dfsResult = dfs nID1 g
+    dfsResult |> should contain nID1
+    dfsResult |> should contain nID2
+    dfsResult |> should contain nID3
+
+[<Fact>]
+let ``Test BFS`` () =
+    let g:MutableGraph<string, string> = MutableGraph.Empty
+    let nID1 = addNode "1" g
+    let nID2 = addNode "2" g
+    let nID3 = addNode "3" g
+    let edge1 = {fromID=nID1; toID=nID2; edgeData="e1"}
+    let edge2 = {fromID=nID2; toID=nID3; edgeData="e2"}
+    addEdge edge1 g |> ignore
+    addEdge edge2 g |> ignore
+
+    let bfsResult = bfs nID1 g
+    bfsResult |> should contain nID1
+    bfsResult |> should contain nID2
+    bfsResult |> should contain nID3

@@ -40,11 +40,11 @@ let tryGetFromDict (k: 'K) (d: Dictionary<'K, 'V>) : 'V option =
     | false -> None
 
 
-let orderNodeIDs (node1: NodeID) (node2: NodeID) : NodeID * NodeID =
-    if hash (node1) < hash (node2) then
-        node1, node2
+let orderNodeIDs (id1: NodeID) (id2: NodeID) : NodeID * NodeID =
+    if hash (id1) < hash (id2) then
+        id1, id2
     else
-        node2, node1
+        id2, id1
 
 let numberOfNodes (graph: MutableGraph<_, _>) : int = graph.NodeData.Count
 
@@ -71,6 +71,17 @@ let getEdges (graph: MutableGraph<_, 'EdgeData>) : Edge<'EdgeData> seq =
               edgeData = ed }))
     |> Seq.concat
 
+let getConnectedNodes (nodeID:NodeID) (graph:MutableGraph<_,_>) : NodeID list =
+    match graph.AdjecencyList.ContainsKey nodeID with
+    | false -> []
+    | true -> graph.AdjecencyList[nodeID]
+              |> (fun x -> x.Keys)
+              |> List.ofSeq
+
+let isDirectlyConnected (node1:NodeID) (node2:NodeID) (graph:MutableGraph<_,_>) : bool =
+    let sorted1, sorted2 = orderNodeIDs node1 node2
+    graph.AdjecencyList.ContainsKey sorted1 && graph.AdjecencyList[node1].ContainsKey sorted2
+
 let numberOfEdges (graph: MutableGraph<_, _>) =
     graph |> getEdges |> Seq.length   
     
@@ -88,13 +99,13 @@ let removeNode (nodeId:NodeID) (graph: MutableGraph<_,_>) : bool =
        graph.AdjecencyList |> Seq.map (|KeyValue|) |> Seq.filter (fun (_,v) -> v.ContainsKey nodeId) |> Seq.iter(fun (_,v) -> v.Remove nodeId |> ignore)             
        true
        
-let nodeAtIndex (nodeId:NodeID)(graph: MutableGraph<_, _>) : 'NodeData option =
+let nodeWithID (nodeId:NodeID)(graph: MutableGraph<_, _>) : 'NodeData option =
     match graph.NodeData.ContainsKey nodeId with
         | true -> Some graph.NodeData[nodeId]
         | false -> None 
     
 
-let addNodeAt (nodeData: 'NodeData) (connectID: NodeID) (edgeData: 'EdgeData) (graph: MutableGraph<'NodeData, 'EdgeData>) : (Edge<'EdgeData> * NodeID) option =
+let addNodeToNode (nodeData: 'NodeData) (connectID: NodeID) (edgeData: 'EdgeData) (graph: MutableGraph<'NodeData, 'EdgeData>) : (Edge<'EdgeData> * NodeID) option =
     if not (graph.NodeData.ContainsKey(connectID)) then None  // the node to which should be connected is unknown
     else
         let newNodeID = graph |> addNode nodeData
@@ -112,14 +123,8 @@ let addEdge (edge:Edge<'EdgeData>) (graph: MutableGraph<'NodeData, 'EdgeData>): 
     else
         false
         
-let hasEdgeBetween (n1:NodeID) (n2: NodeID) (graph: MutableGraph<'NodeData, 'EdgeData>) : bool =
-    if not (graph.NodeData.ContainsKey(n1)) or not (graph.NodeData.ContainsKey(n2)) then false
-    else
-        let n1ID, n2ID = orderNodeIDs n1 n2
-        if graph.AdjecencyList.ContainsKey n1ID then
-            graph.AdjecencyList.[n1ID].ContainsKey(n2ID)
-        else
-            false
+let hasEdgeBetween (n1:NodeID) (n2: NodeID) (graph: MutableGraph<_, _>) : bool =
+    isDirectlyConnected n1 n2 graph
             
 type MolGraph = MutableGraph<Atom, BondType>
 
@@ -134,4 +139,27 @@ let dotGraph graph : string =
     result.Append("}\n") |> ignore
     result.ToString()
 
-            
+
+type SearchType =
+    | DFS
+    | BFS
+
+let listNodes (startNode: NodeID) (searchType:SearchType) (graph: MutableGraph<_, _>) : NodeID list =
+    let dq = LinkedList<NodeID>()
+    let result = HashSet<NodeID>()
+    dq.AddFirst(startNode) |> ignore
+    while dq.Count > 0 do
+        let current = dq.First.Value
+        dq.RemoveFirst()
+        if  not (result.Contains(current)) then
+            result.Add current |> ignore
+            getConnectedNodes current graph
+            |> List.iter (fun x -> if searchType = DFS then dq.AddFirst(x) |> ignore else dq.AddLast(x) |> ignore)
+    result |> List.ofSeq
+               
+
+let dfs (startNode: NodeID) (graph: MutableGraph<_, _>) : NodeID list =
+    listNodes startNode SearchType.DFS graph
+    
+let bfs (startNode: NodeID) (graph: MutableGraph<_, _>) : NodeID list =
+    listNodes startNode SearchType.BFS graph
