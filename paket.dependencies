@@ -4,6 +4,7 @@ nuget coverlet.collector
 nuget fparsec
 nuget fparsec-pipes
 nuget FSharp.Core
+nuget FSharp.HashCollections
 nuget FSharpx.Collections
 nuget FsUnit
 nuget FsUnit.xunit

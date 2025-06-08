@@ -14,7 +14,6 @@ type RingClosure =
       atomId: NodeID
     }
 
-
 type ParseState = {
    mutable branches: Stack<NodeID>
    mutable ringConnect: Dictionary<int, RingClosure>
@@ -23,7 +22,7 @@ type ParseState = {
    mutable connectID: NodeID option
    }
    with
-    static member Default = { branches=Stack(); ringConnect=Dictionary(); mol=MutableGraph.Empty; currentBond = None; connectID = None}
+    static member Default = { branches=Stack(); ringConnect=Dictionary(); mol=Graph.Empty; currentBond = None; connectID = None}
     member this.setCurrentBond b = this.currentBond <- b
     member this.getCurrentBond: BondType = match this.currentBond with
                                            | None -> BondType.Single
@@ -33,13 +32,16 @@ type ParseState = {
         | Some connectTo ->
             let connectAtom = getNodeData connectTo this.mol
             let bondType = if this.currentBond.IsNone && connectAtom.Value.IsAromatic && a.IsAromatic then BondType.Aromatic else this.getCurrentBond
-            match (addNodeToNode a connectTo bondType this.mol) with
+            let newMol, newItems = (addNodeToNode a connectTo bondType this.mol)
+            this.mol <- newMol
+            match newItems with
             | Some (newEdge, newNodeID) -> this.connectID <- Some newNodeID; this.currentBond <- None; Some newNodeID
             | None -> None  
         | None ->
-            this.connectID <- Some (addNode a this.mol)
+            let newMol, newNodeId = addNode a this.mol
+            this.mol <- newMol
+            this.connectID <- Some newNodeId
             Some this.connectID.Value
-
     
     member this.openBranch =
         match this.connectID with
@@ -62,7 +64,8 @@ type ParseState = {
             let rc = this.ringConnect[ringID]
             let bondType = if this.currentBond.IsNone && this.mol.NodeData.[rc.atomId].IsAromatic && this.mol.NodeData.[this.connectID.Value].IsAromatic then BondType.Aromatic else this.getCurrentBond
             let edge = {fromID=rc.atomId; toID=this.connectID.Value; edgeData=bondType}
-            addEdge edge this.mol |> ignore
+            let newMol = addEdge edge this.mol
+            this.mol <- newMol
         | false -> raise (IndexOutOfRangeException($"Trying to close ring with id {ringID} that isn't open"))
 
 let aliphatic_organic: Parser<Atom, ParseState> =  %[ "Cl"; "Br"; "B"; "C"; "N"; "O"; "S"; "P"; "F"; "I" ] |>>

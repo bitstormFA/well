@@ -3,3 +3,4 @@ RDKit2DotNetStandard
 fparsec
 fparsec-pipes
 FSharpx.Collections
+FSharp.HashCollections
