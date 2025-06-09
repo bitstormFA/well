@@ -54,6 +54,9 @@ let ``Test Dijkstra shortest path`` () =
     let dist, path = shortestPath 0 11 mol
     dist |> shouldEqual 6
     path |> shouldEqual [0;1;3;4;9;10;11]
+    let dist2, path2 = shortestPath 11 0 mol
+    dist2 |> shouldEqual 6
+    path2 |> List.rev |> shouldEqual [0;1;3;4;9;10;11]
 
 [<Fact>]
 let ``Test Floyd-Warshall shortest path`` () =

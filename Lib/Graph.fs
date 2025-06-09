@@ -51,8 +51,15 @@ let edgesInAdjecencyList (adjecencyList:GraphAdjecencyList<_>) =
 let numberEdgesInAdjecencyList (adjecencyList:GraphAdjecencyList<_>) : int =
     toSeq adjecencyList |>
     Seq.map (fun struct(_,v) -> HashMap.count v) |> Seq.sum
-    
 
+let edgesWithNodeId (nID:NodeID) (adjecencyList:GraphAdjecencyList<'EdgeData>): Edge<'EdgeData> seq =
+    edgesInAdjecencyList adjecencyList |> Seq.filter(fun e -> e.fromID=nID || e.toID=nID) 
+    
+let connectedNodes (nID:NodeID) (adjecencyList:GraphAdjecencyList<'EdgeData>): NodeID seq =
+    edgesWithNodeId nID adjecencyList |> 
+        Seq.map (fun e ->
+                    if e.fromID <> nID then e.fromID else e.toID)
+    
 [<Struct>]
 type Graph<'NodeData, 'EdgeData when 'NodeData: equality and 'EdgeData: equality> =
     { NodeData: HashMap<NodeID, 'NodeData>
@@ -96,11 +103,7 @@ let Edges (graph: Graph<_, 'EdgeData>) : Edge<'EdgeData> seq =
     graph.AdjecencyList |> edgesInAdjecencyList
 
 let getConnectedNodes (nodeID:NodeID) (graph:Graph<_,_>) : NodeID list =
-    match HashMap.containsKey nodeID graph.AdjecencyList with
-    | false -> []
-    | true -> graph.AdjecencyList[nodeID]
-              |> HashMap.keys
-              |> List.ofSeq
+    connectedNodes nodeID graph.AdjecencyList |> List.ofSeq
 
 let isDirectlyConnected (node1:NodeID) (node2:NodeID) (graph:Graph<_,_>) : bool =
     let sorted1, sorted2 = orderNodeIDs node1 node2
@@ -108,7 +111,7 @@ let isDirectlyConnected (node1:NodeID) (node2:NodeID) (graph:Graph<_,_>) : bool 
 
 let getEdgeBetween (node1:NodeID) (node2:NodeID) (graph:Graph<_,_>) : Edge<'EdgeData> option =
     let sorted1, sorted2 = orderNodeIDs node1 node2
-    if containsKey sorted1 graph.AdjecencyList && containsKey sorted2 graph.AdjecencyList[node1] then
+    if containsKey sorted1 graph.AdjecencyList && containsKey sorted2 graph.AdjecencyList[sorted1] then
         Some {fromID=sorted1; toID=sorted2; edgeData=graph.AdjecencyList[sorted1][sorted2]}
     else
         None 
@@ -214,6 +217,7 @@ let shortestPathWithWeights (startID:NodeID) (endID:NodeID) (getEdgeWeight:'Edge
     while nodeQueue.Count > 0 do
         let currentNode = nodeQueue.Dequeue()
         let currenDist = dist[currentNode]
+        let c_debug = getConnectedNodes currentNode graph 
         for connected in getConnectedNodes currentNode graph do
             let edge = (getEdgeBetween currentNode connected graph).Value
             let weight = getEdgeWeight edge.edgeData
