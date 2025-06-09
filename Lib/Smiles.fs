@@ -3,7 +3,6 @@ module Lib.SmilesParser
 open System
 open FParsec
 open FParsec.Pipes
-open Microsoft.FSharp.Reflection
 open Lib.Types
 open Lib.Graph
 open System.Collections.Generic

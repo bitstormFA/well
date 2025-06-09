@@ -74,11 +74,14 @@ let orderNodeIDs (id1: NodeID) (id2: NodeID) : NodeID * NodeID =
 
 let numberOfNodes (graph: Graph<_, _>) : int = HashMap.count graph.NodeData
 
-let Nodes graph =
+let NodesIDs graph =
     HashMap.keys graph.NodeData
     
 let NodeData graph =
     HashMap.values graph.NodeData
+
+let Nodes graph =
+    graph.NodeData |> HashMap.toSeq |> Seq.map (fun struct (k,v) -> {Node.id=k; Node.data=v})
      
 let getNodeData nodeID graph =
     graph.NodeData.TryFind nodeID 
@@ -191,3 +194,34 @@ let dfs (startNode: NodeID) (graph: Graph<_, _>) : NodeID list =
     
 let bfs (startNode: NodeID) (graph: Graph<_, _>) : NodeID list =
     listNodes startNode SearchType.BFS graph
+    
+let shortestPath (startID:NodeID) (endID:NodeID) (graph: Graph<'NodeData, 'EdgeData>) : float * NodeID list =
+    let nodeQueue = PriorityQueue<NodeID, float>()
+    let previousNodes = Dictionary<NodeID, NodeID>()
+    let dist = Dictionary<NodeID, float>()
+    NodesIDs graph |> Seq.iter (fun id ->
+                                    let initDist = if id = startID then 0.0 else infinity
+                                    nodeQueue.Enqueue(id,initDist)
+                                    dist[id] <- initDist)
+    
+    while nodeQueue.Count > 0 do
+        let currentNode = nodeQueue.Dequeue()
+        let currenDist = dist[currentNode]
+        for connected in getConnectedNodes currentNode graph do
+            let weight = 1.0 // assume constant weights, change if more general is needed
+            let connectedDist = weight + currenDist
+            if connectedDist < dist[connected] then
+                dist[connected] <- connectedDist 
+                previousNodes[connected] <- currentNode
+                nodeQueue.Remove connected |> ignore
+                nodeQueue.Enqueue(connected, connectedDist)
+        nodeQueue.Remove currentNode |> ignore
+                
+    let path = ResizeArray<NodeID>()
+    let mutable currentNode = endID
+    while currentNode <> startID do
+        path.Add currentNode
+        currentNode <- previousNodes[currentNode]
+    path.Add startID
+    dist.[endID], (path |> List.ofSeq |> List.rev)
+    

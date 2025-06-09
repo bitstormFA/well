@@ -47,3 +47,11 @@ let ``Test Smiles Parser`` () =
     plot.Length |> shouldBeGreaterThan 0
 
 
+[<Fact>]
+let ``Test shortest path`` () =
+    let input = "CC(=O)Oc1ccccc1C(O)=O"
+    let mol = (runParser smiles input).Value.Head
+    let dist, path = shortestPath 1 12 mol
+    dist |> shouldEqual 6
+    path |> shouldEqual [1;2;4;5;10;11;12]
+    
