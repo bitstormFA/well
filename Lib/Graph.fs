@@ -252,10 +252,12 @@ let floydWarshallWeight (graph: Graph<'NodeData, 'EdgeData>) (getEdgeWeight:'Edg
 
     for k in 0..n-1 do
         for i in 0..n-1 do
-            for j in 0..n-1 do
+            for j in i+1..n-1 do
                 if dist[i, k] + dist[k, j] < dist[i, j] then
                     dist[i, j] <- dist[i, k] + dist[k, j]
+                    dist[j, i] <- dist[i, j]
                     prev[i, j] <- prev[k, j]
+                    prev[j, i] <- prev[k, i]
 
     dist, prev 
 

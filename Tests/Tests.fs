@@ -63,3 +63,5 @@ let ``Test Floyd-Warshall shortest path`` () =
     let path = reconstructFloydWarshallPath 0 11 dist prev
     path |> shouldNotEqual None
     path.Value |> shouldEqual [0;1;3;4;9;10;11]
+    let path2 = reconstructFloydWarshallPath 11 0 dist prev
+    path2.Value |> List.rev |> shouldEqual path.Value
