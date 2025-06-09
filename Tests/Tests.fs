@@ -48,10 +48,18 @@ let ``Test Smiles Parser`` () =
 
 
 [<Fact>]
-let ``Test shortest path`` () =
+let ``Test Dijkstra shortest path`` () =
     let input = "CC(=O)Oc1ccccc1C(O)=O"
     let mol = (runParser smiles input).Value.Head
-    let dist, path = shortestPath 1 12 mol
+    let dist, path = shortestPath 0 11 mol
     dist |> shouldEqual 6
-    path |> shouldEqual [1;2;4;5;10;11;12]
-    
+    path |> shouldEqual [0;1;3;4;9;10;11]
+
+[<Fact>]
+let ``Test Floyd-Warshall shortest path`` () =
+    let input = "CC(=O)Oc1ccccc1C(O)=O"
+    let mol = (runParser smiles input).Value.Head
+    let dist, prev = floydWarshall mol
+    let path = reconstructFloydWarshallPath 0 11 dist prev
+    path |> shouldNotEqual None
+    path.Value |> shouldEqual [0;1;3;4;9;10;11]

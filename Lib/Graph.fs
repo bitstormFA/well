@@ -63,7 +63,7 @@ type Graph<'NodeData, 'EdgeData when 'NodeData: equality and 'EdgeData: equality
     static member Empty:Graph<'EdgeData, 'NodeData> =
         { NodeData = HashMap.empty
           AdjecencyList = HashMap.empty
-          LastId = 0
+          LastId = -1
         }
 
 let orderNodeIDs (id1: NodeID) (id2: NodeID) : NodeID * NodeID =
@@ -104,7 +104,14 @@ let getConnectedNodes (nodeID:NodeID) (graph:Graph<_,_>) : NodeID list =
 
 let isDirectlyConnected (node1:NodeID) (node2:NodeID) (graph:Graph<_,_>) : bool =
     let sorted1, sorted2 = orderNodeIDs node1 node2
-    HashMap.containsKey sorted1 graph.AdjecencyList && HashMap.containsKey sorted2 graph.AdjecencyList[node1]
+    containsKey sorted1 graph.AdjecencyList && containsKey sorted2 graph.AdjecencyList[sorted1]
+
+let getEdgeBetween (node1:NodeID) (node2:NodeID) (graph:Graph<_,_>) : Edge<'EdgeData> option =
+    let sorted1, sorted2 = orderNodeIDs node1 node2
+    if containsKey sorted1 graph.AdjecencyList && containsKey sorted2 graph.AdjecencyList[node1] then
+        Some {fromID=sorted1; toID=sorted2; edgeData=graph.AdjecencyList[sorted1][sorted2]}
+    else
+        None 
     
 let numberOfEdges (graph: Graph<_, _>) =
     graph.AdjecencyList |> numberEdgesInAdjecencyList
@@ -195,7 +202,7 @@ let dfs (startNode: NodeID) (graph: Graph<_, _>) : NodeID list =
 let bfs (startNode: NodeID) (graph: Graph<_, _>) : NodeID list =
     listNodes startNode SearchType.BFS graph
     
-let shortestPath (startID:NodeID) (endID:NodeID) (graph: Graph<'NodeData, 'EdgeData>) : float * NodeID list =
+let shortestPathWithWeights (startID:NodeID) (endID:NodeID) (getEdgeWeight:'EdgeData -> float) (graph: Graph<'NodeData, 'EdgeData>)  : float * NodeID list =
     let nodeQueue = PriorityQueue<NodeID, float>()
     let previousNodes = Dictionary<NodeID, NodeID>()
     let dist = Dictionary<NodeID, float>()
@@ -208,7 +215,8 @@ let shortestPath (startID:NodeID) (endID:NodeID) (graph: Graph<'NodeData, 'EdgeD
         let currentNode = nodeQueue.Dequeue()
         let currenDist = dist[currentNode]
         for connected in getConnectedNodes currentNode graph do
-            let weight = 1.0 // assume constant weights, change if more general is needed
+            let edge = (getEdgeBetween currentNode connected graph).Value
+            let weight = getEdgeWeight edge.edgeData
             let connectedDist = weight + currenDist
             if connectedDist < dist[connected] then
                 dist[connected] <- connectedDist 
@@ -224,4 +232,52 @@ let shortestPath (startID:NodeID) (endID:NodeID) (graph: Graph<'NodeData, 'EdgeD
         currentNode <- previousNodes[currentNode]
     path.Add startID
     dist.[endID], (path |> List.ofSeq |> List.rev)
+ 
+let shortestPath (startID:NodeID) (endID:NodeID) (graph: Graph<'NodeData, 'EdgeData>) : float * NodeID list =
+    shortestPathWithWeights startID endID (fun _ -> 1.0) graph 
     
+let floydWarshallWeight (graph: Graph<'NodeData, 'EdgeData>) (getEdgeWeight:'EdgeData -> float) =
+    let n = numberOfNodes graph
+    let dist = Array2D.init n n (fun i j -> if i = j then 0.0 else infinity)
+    let prev = Array2D.init n n (fun x y -> if x = y then x else -1)
+
+    for e in Edges graph do
+        let fromID = e.fromID 
+        let toID = e.toID 
+        let weight = getEdgeWeight e.edgeData  
+        dist[fromID, toID] <- weight
+        dist[toID, fromID] <- weight
+        prev[fromID, toID] <- fromID
+        prev[toID, fromID] <- toID
+
+    for k in 0..n-1 do
+        for i in 0..n-1 do
+            for j in 0..n-1 do
+                if dist[i, k] + dist[k, j] < dist[i, j] then
+                    dist[i, j] <- dist[i, k] + dist[k, j]
+                    prev[i, j] <- prev[k, j]
+
+    dist, prev 
+
+let reconstructFloydWarshallPath (fromID: NodeID) (toID: NodeID) (dist: float array2d) (prev: int array2d) : int list option =
+    if dist[fromID, toID] = -1 then 
+        None
+    else
+        let path = ResizeArray<NodeID>()
+        path.Add(toID)
+        let mutable curr = toID
+        while curr <> fromID do
+            curr <- prev[fromID, curr] 
+            if curr = -1 then 
+                curr <- toID
+                path.Clear()
+            else 
+                path.Add(curr) 
+        if path.Count >0 then
+            Some (path |> Seq.toList |> List.rev )
+        else
+            None 
+        
+ 
+let rec floydWarshall (graph: Graph<'NodeData, 'EdgeData>) =
+    floydWarshallWeight graph (fun _ -> 1.0)
