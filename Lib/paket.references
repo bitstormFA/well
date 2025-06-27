@@ -4,3 +4,4 @@ fparsec
 fparsec-pipes
 FSharpx.Collections
 FSharp.HashCollections
+OptimizedPriorityQueue

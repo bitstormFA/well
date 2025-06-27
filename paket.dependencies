@@ -9,6 +9,7 @@ nuget FSharpx.Collections
 nuget FsUnit
 nuget FsUnit.xunit
 nuget Microsoft.NET.Test.Sdk 
+nuget OptimizedPriorityQueue
 nuget RDKit2DotNetStandard
 nuget xunit 
 nuget xunit.runner.visualstudio 

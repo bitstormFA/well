@@ -1,7 +1,7 @@
 ﻿module Tests
 
 open FsUnitTyped
-open Lib.Types
+open Swensen.Unquote
 open Xunit
 open FsUnit 
 open Lib.SmilesParser
@@ -28,7 +28,7 @@ let ``Add nodes and edges to graph`` () =
     numberOfNodes g |> should equal 1
     numberOfEdges g |> should equal 0
     let g, nID2 = addNode "2" g
-    let edge = {fromID=nID1; toID=nID2; edgeData="e1"}
+    let edge = {nodes=NodeSet.construct nID1 nID2; edgeData="e1"}
     let g  = addEdge edge g
     numberOfEdges g |> shouldEqual 1
     numberOfNodes g |> should equal 2
@@ -48,6 +48,26 @@ let ``Test Smiles Parser`` () =
 
 
 [<Fact>]
+let ``Test simple graph functions`` () =
+    let input = "CC(=O)Oc1ccccc1C(O)=O"
+    let res = runParser smiles input
+    res |> should not' (be Null)
+    let graph = res.Value[0]
+    test <@ numberOfNodes graph = 13 @>
+    test <@ numberOfEdges graph = 13 @>
+    edgesInAdjecencyList graph.AdjecencyList |> List.length |> shouldEqual 13 
+    let removedAL = removeEdgesContaining 0 graph.AdjecencyList
+    test <@ (edgesInAdjecencyList removedAL).Length = 12 @>
+    test <@ getConnectedNodes 1 graph |> Set.ofSeq = (Set [0;2;3]) @>
+    test <@ isDirectlyConnected 2 1 graph = true  @>
+    test <@ isDirectlyConnected 1 2 graph = true  @>
+    test <@ isDirectlyConnected 0 3 graph = false @>
+    test <@ isDirectlyConnected 3 0 graph = false @>
+    test <@ Option.isSome (getEdgeBetween 1 2 graph) @> 
+    test <@ Option.isNone (getEdgeBetween 0 3 graph) @> 
+    
+
+[<Fact>]
 let ``Test Dijkstra shortest path`` () =
     let input = "CC(=O)Oc1ccccc1C(O)=O"
     let mol = (runParser smiles input).Value.Head
@@ -56,7 +76,7 @@ let ``Test Dijkstra shortest path`` () =
     path |> shouldEqual [0;1;3;4;9;10;11]
     let dist2, path2 = shortestPath 11 0 mol
     dist2 |> shouldEqual 6
-    path2 |> List.rev |> shouldEqual [0;1;3;4;9;10;11]
+    path2 |> List.rev |>  shouldEqual [0;1;3;4;9;10;11]
 
 [<Fact>]
 let ``Test Floyd-Warshall shortest path`` () =
