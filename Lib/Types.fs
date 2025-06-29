@@ -169,7 +169,7 @@ let bondMap= Map [
     "$", BondType.Quadruple
     ":", BondType.Aromatic
     "/", BondType.Single
-    @"\\", BondType.Single 
+    @"\", BondType.Single 
 ]
 
 

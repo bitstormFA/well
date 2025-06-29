@@ -1,6 +1,7 @@
 ﻿module Tests
 
 open FsUnitTyped
+open Lib.Types
 open Swensen.Unquote
 open Xunit
 open FsUnit 
@@ -39,6 +40,25 @@ let ``Test Smiles Parser`` () =
     let plot = dotGraph aspirinMol
     plot.Length |> shouldBeGreaterThan 0
 
+[<Fact>]
+let ``Test ez handling`` () =
+    let mol = (smilesToMol "F/C=C/F").Value.Head
+    test <@ numberOfNodes mol = 4 @>
+    let bond1 = getEdgeBetween 0 1 mol
+    test <@ bond1.IsSome @>
+    test <@ bond1.Value.edgeData.Direction=BondDirection.CisTrans1 @>
+    let bond2 = getEdgeBetween 2 3 mol
+    test <@ bond2.IsSome @>
+    test <@ bond2.Value.edgeData.Direction=BondDirection.CisTrans1 @>
+    
+    let mol2 = (smilesToMol @"F\C=C/F").Value.Head
+    test <@ numberOfNodes mol = 4 @>
+    let bond3 = getEdgeBetween 0 1 mol2
+    test <@ bond3.IsSome @>
+    test <@ bond3.Value.edgeData.Direction=BondDirection.CisTrans2 @>
+    let bond4 = getEdgeBetween 2 3 mol2
+    test <@ bond4.IsSome @>
+    test <@ bond4.Value.edgeData.Direction=BondDirection.CisTrans1 @>
 
 [<Fact>]
 let ``Test simple graph functions`` () =
