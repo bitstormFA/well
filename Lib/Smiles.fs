@@ -62,7 +62,7 @@ type ParseState = {
         | true ->
             let rc = this.ringConnect[ringID]
             let bondType = if this.currentBond.IsNone && this.mol.NodeData.[rc.atomId].IsAromatic && this.mol.NodeData.[this.connectID.Value].IsAromatic then BondType.Aromatic else this.getCurrentBond
-            let edge = {nodes=NodeSet.construct rc.atomId this.connectID.Value; edgeData=bondType}
+            let edge = {nodes=EdgeNodes.construct rc.atomId this.connectID.Value; edgeData=bondType}
             let newMol = addEdge edge this.mol
             this.mol <- newMol
         | false -> raise (IndexOutOfRangeException($"Trying to close ring with id {ringID} that isn't open"))
@@ -151,4 +151,14 @@ let closeBranch = %')' |> changeState (fun c (state:ParseState) ->
 
 let chain = many (atom <|> openBranch <|> closeBranch <|> ringID <|> bond) >>. getUserState |>> _.mol 
 
-let smiles =  sepBy chain (pstring ".") 
+let smiles =  sepBy chain (pstring ".")
+
+let runParser p str  =
+    let initState = ParseState.Default
+    let parseResult = runParserOnString p initState "" str 
+    match parseResult with 
+    | ParserResult.Success (result, state, _) -> Some result
+    | ParserResult.Failure _ -> None
+    
+let smilesToMol (smi:string) =
+    runParser smiles smi

@@ -17,7 +17,7 @@ let orderNodeIDs (id1: NodeID) (id2: NodeID) : NodeID * NodeID =
     else
         id2, id1
 
-type NodeSet =
+type EdgeNodes =
     {
         node1: NodeID
         node2: NodeID 
@@ -35,7 +35,7 @@ type NodeSet =
 [<Struct>]
 type Edge<'EdgeData when 'EdgeData: equality> =
     {
-      nodes: NodeSet 
+      nodes: EdgeNodes 
       edgeData: 'EdgeData }
     
 [<Struct>]
@@ -66,7 +66,7 @@ let edgesInAdjecencyList (adjecencyList:GraphAdjecencyList<_>) =
         Seq.map (|KeyValue|) |>
         Seq.map (fun (n2, ed) ->
             {
-              nodes = NodeSet.construct nodeID n2
+              nodes = EdgeNodes.construct nodeID n2
               edgeData = ed }))
     |> Seq.concat
     |> List.ofSeq
@@ -105,7 +105,11 @@ let nodeData graph =
     values graph.NodeData
 
 let nodes graph =
-    graph.NodeData |> toSeq |> Seq.map (fun struct (k,v) -> {Node.id=k; Node.data=v})
+    graph.NodeData |> toSeq |> Seq.map (fun struct (k,v) -> {Node.id=k; Node.data=v}) |> List.ofSeq
+
+
+let nodeIndex graph =
+    nodes graph |> List.mapi (fun i n -> i,n)
      
 let getNodeData nodeID graph =
     graph.NodeData.TryFind nodeID 
@@ -118,6 +122,15 @@ let getNodeLabel nodeID  graph =
 
 let edges (graph: Graph<_, 'EdgeData>) : Edge<'EdgeData> list =
     graph.AdjecencyList |> edgesInAdjecencyList
+
+let edgeIndex (graph: Graph<_, 'EdgeData>) =
+    edges graph |> List.mapi (fun i e -> i,e) |> Map.ofList
+
+let nodeSets graph =
+    edges graph |> List.map(fun x -> x.nodes)
+
+let nodeSetIndex (graph: Graph<_, 'EdgeData>) =
+    edges graph |> List.mapi (fun i e -> e.nodes, i ) |> Map.ofList
 
 let getNodeEdges (node:NodeID) (graph:Graph<_, 'EdgeData>) : Edge<'EdgeData> list =
     edges graph |>
@@ -135,7 +148,7 @@ let isDirectlyConnected (node1:NodeID) (node2:NodeID) (graph:Graph<_,_>) : bool 
 let getEdgeBetween (node1:NodeID) (node2:NodeID) (graph:Graph<_,_>) : Edge<'EdgeData> option =
     let sorted1, sorted2 = orderNodeIDs node1 node2
     if containsKey sorted1 graph.AdjecencyList && containsKey sorted2 graph.AdjecencyList[sorted1] then
-        Some { nodes=NodeSet.construct sorted1 sorted2; edgeData=graph.AdjecencyList[sorted1][sorted2]}
+        Some { nodes=EdgeNodes.construct sorted1 sorted2; edgeData=graph.AdjecencyList[sorted1][sorted2]}
     else
         None 
     
@@ -169,7 +182,7 @@ let addNodeToNode (nodeData: 'NodeData) (connectID: NodeID) (edgeData: 'EdgeData
     else
         let graph, newNodeID = graph |> addNode nodeData
         let n1ID, n2ID = orderNodeIDs newNodeID connectID  // make sure bonds are always in the same order so they can be identified
-        let edge = {nodes=NodeSet.construct n1ID n2ID; edgeData=edgeData}
+        let edge = {nodes=EdgeNodes.construct n1ID n2ID; edgeData=edgeData}
         let graph = {graph with AdjecencyList=graph.AdjecencyList |> addEdgeData n1ID n2ID edgeData}
         graph, Some (edge, newNodeID)
 
@@ -333,11 +346,133 @@ let getPathToRoot (predecessors: Map<NodeID, NodeID>) (endNode:NodeID) =
     let mutable currentNode = Some endNode 
     while currentNode.IsSome do
         currentNode <- match predecessors.TryFind currentNode.Value with
-                        | Some pred -> path.AddFirst currentNode.Value |> ignore
+                        | Some pred -> path.AddLast currentNode.Value |> ignore
                                        Some pred
-                        | None -> None
-                
+                        | None -> path.AddLast currentNode.Value |> ignore
+                                  None            
     path |> List.ofSeq
     
-let spanningTree (startNode:NodeID) (graph:Graph<_,_>) =
-    1
+/// Represents a cycle as a set of edges.
+type Cycle = Set<EdgeNodes>
+
+/// Represents the basis with both the cycle edges and their vector forms.
+type Basis = {
+    Cycles: List<Cycle>
+    Vectors: list<int array>
+    }
+    with
+        static member empty = { Cycles=List.empty; Vectors=List.empty}
+
+let empty = { Cycles = []; Vectors = [] }
+
+/// Converts a cycle (set of edges) into a binary vector.
+let toVector (edgeIndex: Map<EdgeNodes, int>) (edgeCount: int) (cycle: Cycle) =
+    let vec = Array.zeroCreate<int> edgeCount
+    for ns in cycle do
+        let u,v = ns.node1, ns.node2
+        let idx = edgeIndex[(EdgeNodes.construct u v)]
+        vec[idx] <- 1
+    vec
+
+/// Reduces a vector by the current basis vectors using XOR.
+/// Returns the reduced vector.
+let private reduceVector (basisVectors: list<int array>) (vec: int array) =
+    let mutable tempVec = Array.copy vec
+    for basisVec in basisVectors do
+        // Ensure tempVec is reduced by basisVec
+        // Find pivot (first '1') in basisVec
+        match Array.tryFindIndex ((=) 1) basisVec with
+        | Some pivotIndex when tempVec[pivotIndex] = 1 ->
+            // XOR the vectors
+            for i in 0 .. tempVec.Length - 1 do
+                tempVec[i] <- (tempVec[i] + basisVec[i]) % 2
+        | _ -> ()
+    tempVec
+
+/// Tries to add a cycle to the basis.
+/// The cycle is added only if it's linearly independent.
+let tryAdd (graph: Graph<_,_>) (basis: Basis) (cycle: Cycle) =
+    let cycleVec = toVector (nodeSetIndex graph) (numberOfNodes graph) cycle
+    let reducedVec = reduceVector basis.Vectors cycleVec
+
+    if Array.exists ((=) 1) reducedVec then
+        // The cycle is linearly independent. Add it to the basis.
+        // To maintain the basis in a "reduced row echelon form", we pivot and reduce other vectors.
+        let pivotIndex = Array.findIndex ((=) 1) reducedVec
+        let mutable newBasisVectors = []
+        for bv in basis.Vectors do
+            if bv[pivotIndex] = 1 then
+                let reducedBv = Array.init bv.Length (fun i -> (bv[i] + reducedVec[i]) % 2)
+                newBasisVectors <- reducedBv :: newBasisVectors
+            else
+                newBasisVectors <- bv :: newBasisVectors
+
+        Some {
+            Cycles = cycle :: basis.Cycles
+            Vectors = reducedVec :: newBasisVectors
+        }
+    else
+        // The cycle is linearly dependent on the current basis.
+        None
+
+
+/// Finds the Minimum Cycle Basis of an unweighted graph using the Mehlhorn-Michail algorithm.
+/// Based on Mehlhorn, Kurt, and Dimitrios Michail. “Minimum Cycle Bases: Faster and Simpler.”
+/// ACM Transactions on Algorithms 6, no. 1 (December 2009): 1–13.
+/// https://doi.org/10.1145/1644015.1644023.
+let findMinimumCycleBasis (graph: Graph<_,_>) =
+    let m = numberOfEdges graph
+    let n = numberOfNodes graph
+    let c = 1 // Assuming a connected graph for simplicity
+    let basisSize = m - n + c
+
+    let mutable basis = Basis.empty
+    let mutable candidateCycles = []
+
+    // 1. Generate all candidate cycles from all SPTs
+    for v in nodes graph do
+        let spt = shortestPathTree graph v.id
+        let predecessors = spt.predecessor
+        let sptEdges =
+            predecessors
+            |> Map.toList
+            |> List.map (fun (child, parent) -> EdgeNodes.construct child parent)
+            |> Set.ofList
+
+        let nonTreeEdges = Set.difference (nodeSets graph |> Set.ofList) sptEdges
+
+        for ns in nonTreeEdges do
+            let u,w = ns.node1, ns.node2
+
+            let path_u = getPathToRoot predecessors u
+            let path_w = getPathToRoot predecessors w
+
+            let path_u_set = Set.ofList path_u
+            let meetNode = List.find (fun node -> path_u_set.Contains(node)) path_w
+            let cyclePath =
+                (List.takeWhile ((<>) meetNode) path_u)
+                @ [meetNode]
+                @ (List.rev (List.takeWhile ((<>) meetNode) path_w))
+                
+
+            let cycleEdges =
+                List.zip cyclePath (List.tail cyclePath @ [List.head cyclePath])
+                |> List.map (fun (n1, n2) -> (min n1 n2, max n1 n2))
+                |> Set.ofList
+
+            let cycleLength = cycleEdges.Count
+            candidateCycles <- (cycleLength, cycleEdges) :: candidateCycles
+
+    let sortedCandidates =
+        candidateCycles
+        |> List.distinctBy snd // Remove duplicate cycles
+        |> List.sortBy fst |> List.map (fun (i,s) -> i, (s |> Set.map(fun n -> EdgeNodes.construct (fst n) (snd n))) )
+        
+
+    for _, cycle in sortedCandidates do
+        if basis.Cycles.Length < basisSize then
+            match tryAdd graph basis cycle with
+            | Some newBasis -> basis <- newBasis
+            | None -> ()
+
+    basis.Cycles 

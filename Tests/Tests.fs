@@ -8,13 +8,6 @@ open Lib.SmilesParser
 open Lib.Graph
 open FParsec
 
-let runParser p str  =
-    let initState = ParseState.Default
-    let parseResult = runParserOnString p initState "" str 
-    match parseResult with 
-    | ParserResult.Success (result, state, _) -> Some result
-    | ParserResult.Failure _ -> None
-
 [<Fact>]
 let ``Create Empty graph`` () =
     let g:Graph<int,int> = Graph.Empty
@@ -28,7 +21,7 @@ let ``Add nodes and edges to graph`` () =
     numberOfNodes g |> should equal 1
     numberOfEdges g |> should equal 0
     let g, nID2 = addNode "2" g
-    let edge = {nodes=NodeSet.construct nID1 nID2; edgeData="e1"}
+    let edge = {nodes=EdgeNodes.construct nID1 nID2; edgeData="e1"}
     let g  = addEdge edge g
     numberOfEdges g |> shouldEqual 1
     numberOfNodes g |> should equal 2
@@ -88,3 +81,10 @@ let ``Test Floyd-Warshall shortest path`` () =
     path.Value |> shouldEqual [0;1;3;4;9;10;11]
     let path2 = reconstructFloydWarshallPath 11 0 dist prev
     path2.Value |> List.rev |> shouldEqual path.Value
+    
+[<Fact>]
+let ``Test cycle base`` () =
+    let input = "C1=NC(=C2C(=N1)N(C=N2)[C@H]3[C@@H]([C@@H]([C@H](O3)CO)O)O)N"
+    let mol = (smilesToMol input).Value.Head
+    let cb = findMinimumCycleBasis mol
+    test <@ cb.Length=3 @>
