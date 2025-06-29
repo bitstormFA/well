@@ -94,7 +94,7 @@ type Graph<'NodeData, 'EdgeData when 'NodeData: equality and 'EdgeData: equality
           LastId = -1
         }
 
-type MolGraph = Graph<Atom, BondType>
+type MolGraph = Graph<Atom, Bond>
 
 let numberOfNodes (graph: Graph<_, _>) : int = count graph.NodeData
 

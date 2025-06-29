@@ -17,24 +17,24 @@ type ParseState = {
    mutable branches: Stack<NodeID>
    mutable ringConnect: Dictionary<int, RingClosure>
    mutable mol: MolGraph
-   mutable currentBond: BondType option
+   mutable currentBondType: BondType option
    mutable connectID: NodeID option
    }
    with
-    static member Default = { branches=Stack(); ringConnect=Dictionary(); mol=Graph.Empty; currentBond = None; connectID = None}
-    member this.setCurrentBond b = this.currentBond <- b
-    member this.getCurrentBond: BondType = match this.currentBond with
-                                           | None -> BondType.Single
-                                           | Some bt -> bt                                          
+    static member Default = { branches=Stack(); ringConnect=Dictionary(); mol=Graph.Empty; currentBondType = None; connectID = None}
+    member this.setCurrentBond b = this.currentBondType <- b
+    member this.getCurrentBond: Bond = match this.currentBondType with
+                                           | None -> Bond.fromBondType BondType.Single
+                                           | Some bt -> Bond.fromBondType bt                                          
     member this.addAtomDefault a =
         match this.connectID with
         | Some connectTo ->
             let connectAtom = getNodeData connectTo this.mol
-            let bondType = if this.currentBond.IsNone && connectAtom.Value.IsAromatic && a.IsAromatic then BondType.Aromatic else this.getCurrentBond
-            let newMol, newItems = (addNodeToNode a connectTo bondType this.mol)
+            let bondType = if this.currentBondType.IsNone && connectAtom.Value.IsAromatic && a.IsAromatic then BondType.Aromatic else this.getCurrentBond.Type
+            let newMol, newItems = (addNodeToNode a connectTo (Bond.fromBondType bondType) this.mol)
             this.mol <- newMol
             match newItems with
-            | Some (newEdge, newNodeID) -> this.connectID <- Some newNodeID; this.currentBond <- None; Some newNodeID
+            | Some (_, newNodeID) -> this.connectID <- Some newNodeID; this.currentBondType <- None; Some newNodeID
             | None -> None  
         | None ->
             let newMol, newNodeId = addNode a this.mol
@@ -61,8 +61,8 @@ type ParseState = {
         match this.ringConnect.ContainsKey ringID with
         | true ->
             let rc = this.ringConnect[ringID]
-            let bondType = if this.currentBond.IsNone && this.mol.NodeData.[rc.atomId].IsAromatic && this.mol.NodeData.[this.connectID.Value].IsAromatic then BondType.Aromatic else this.getCurrentBond
-            let edge = {nodes=EdgeNodes.construct rc.atomId this.connectID.Value; edgeData=bondType}
+            let bondType = if this.currentBondType.IsNone && this.mol.NodeData[rc.atomId].IsAromatic && this.mol.NodeData[this.connectID.Value].IsAromatic then BondType.Aromatic else this.getCurrentBond.Type
+            let edge = {nodes=EdgeNodes.construct rc.atomId this.connectID.Value; edgeData=Bond.fromBondType bondType}
             let newMol = addEdge edge this.mol
             this.mol <- newMol
         | false -> raise (IndexOutOfRangeException($"Trying to close ring with id {ringID} that isn't open"))
@@ -112,6 +112,7 @@ let bracket_atom: Parser<Atom, ParseState>  =
                                                              Charge=charge
                                                              AtomClass=sClass
                                                              IsAromatic=snd symbol
+                                                             Hybridization=None 
                                                              }
 
 let changeState  f p =
@@ -123,7 +124,7 @@ let changeState2  f p =
 let bonds = %List.ofSeq(bondMap.Keys)
 let bond: Parser<unit, ParseState> = %% +. bonds -%> (fun bk -> bondMap[bk])
                                      |> changeState (fun bt state ->
-                                         state.currentBond <- Some bt
+                                         state.currentBondType <- Some bt
                                          state)
 
 let ringID: Parser<unit, ParseState> = digit |>> int <|>  %% %'%' -- +. digit -- +. digit -%>( fun d1 d2-> int(d1+d2))
@@ -139,13 +140,13 @@ let atom = bracket_atom <|> aliphatic_organic <|> aromatic_organic
                state.addAtomDefault(atom) |> ignore
                state) 
 
-let openBranch  = %'(' |> changeState (fun c (state:ParseState) ->
+let openBranch  = %'(' |> changeState (fun _ (state:ParseState) ->
                                                 state.openBranch |> ignore
                                                 state)
                                                 
 
 
-let closeBranch = %')' |> changeState (fun c (state:ParseState) ->
+let closeBranch = %')' |> changeState (fun _ (state:ParseState) ->
                                                  state.closeBranch
                                                  state)
 
@@ -157,7 +158,7 @@ let runParser p str  =
     let initState = ParseState.Default
     let parseResult = runParserOnString p initState "" str 
     match parseResult with 
-    | ParserResult.Success (result, state, _) -> Some result
+    | ParserResult.Success (result, _, _) -> Some result
     | ParserResult.Failure _ -> None
     
 let smilesToMol (smi:string) =

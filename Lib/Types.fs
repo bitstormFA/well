@@ -1,6 +1,4 @@
 module Lib.Types
-
-open System.Collections.Generic
 open System.Text
 open Microsoft.FSharp.Reflection
 
@@ -49,8 +47,8 @@ let capitalizeFirstChar (s: string) =
     if System.String.IsNullOrEmpty(s) then
         s // Or "" depending on desired behavior for null/empty
     else
-        let firstChar = System.Char.ToUpper(s.[0])
-        let restOfString = s.[1..]
+        let firstChar = System.Char.ToUpper(s[0])
+        let restOfString = s[1..]
         string firstChar + restOfString
         
 let tryStringToElement (elementSymbol: string) : Element option =
@@ -71,7 +69,7 @@ let allElementCasesAsStringList () : list<string> =
     with
     | ex ->
         eprintfn $"Error getting element case names: %s{ex.Message}"
-        [] // Return empty list on error
+        [] // Return an empty list on error
 
 type BondType =
     | Single
@@ -79,14 +77,52 @@ type BondType =
     | Triple
     | Quadruple
     | Aromatic
+    | Ionic
+    | Dative
+    | DativeSingle
+    | Unknown
+
+type BondDirection =
+    | NoDirection 
     | Up
     | Down
+    | CisTrans1
+    | CisTrans2
     | Unknown
+    
+let bondTypeValenceContribution (bt:BondType) =
+    match bt with
+    | Single -> 1.0
+    | Double -> 2.0
+    | Triple -> 3.0
+    | Quadruple -> 4.0
+    | Aromatic -> 1.5
+    | Dative -> 1.0
+    | DativeSingle -> 1.0
+    | BondType.Unknown -> 1.0
+    | Ionic -> 0.0
     
 type Chirality =
     | Clockwise
     | CounterClockwise
+
+type Bond =
+    {
+        Type:BondType
+        Conjugated: bool
+        Direction: BondDirection
+    }
+    with
+    static member fromBondType bt = {Type=bt; Conjugated=false; Direction=NoDirection}
     
+type Hybridization =
+    | S
+    | SP
+    | SP2
+    | SP3
+    | SP2D
+    | SP3D
+    | OTHER
     
 type Atom =
     {
@@ -97,6 +133,7 @@ type Atom =
         Charge: int option
         IsAromatic: bool 
         AtomClass: int option
+        Hybridization: Hybridization option
     }
     static member Default =
         {
@@ -107,6 +144,7 @@ type Atom =
             Charge = None
             IsAromatic = false
             AtomClass = None
+            Hybridization = None
         }
     override this.ToString() =
         let result = StringBuilder()
@@ -130,8 +168,8 @@ let bondMap= Map [
     "#", BondType.Triple
     "$", BondType.Quadruple
     ":", BondType.Aromatic
-    "/", BondType.Up
-    @"\\", BondType.Down 
+    "/", BondType.Single
+    @"\\", BondType.Single 
 ]
 
 
