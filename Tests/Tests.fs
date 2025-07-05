@@ -7,7 +7,6 @@ open Xunit
 open FsUnit 
 open Lib.SmilesParser
 open Lib.Graph
-open FParsec
 
 [<Fact>]
 let ``Create Empty graph`` () =
@@ -28,6 +27,50 @@ let ``Add nodes and edges to graph`` () =
     numberOfNodes g |> should equal 2
     hasEdgeBetween nID1 nID2 g |> should be True
 
+[<Fact>]
+let ``Remove nodes and edges to graph`` () =
+    let g:Graph<string, string> = Graph.Empty
+    let g, n1 = addNode "1" g
+    let g, n2 = addNode "2" g
+    let g, n3 = addNode "3" g
+    let e1 = {nodes=EdgeNodes.construct n1 n2; edgeData="e12"}
+    let e2 = {nodes=EdgeNodes.construct n1 n3; edgeData="e13"}
+    let e3 = {nodes=EdgeNodes.construct n2 n3; edgeData="e23"}
+    let gStart= g |> addEdge e1 |> addEdge e2 |> addEdge e3
+    test <@ numberOfEdges gStart = 3 @>
+    test <@ numberOfNodes gStart = 3 @>
+    let gEdgeMinus1 = removeEdge n1 n2 gStart
+    test <@ numberOfNodes gEdgeMinus1 = 3 @>
+    test <@ numberOfEdges gEdgeMinus1 = 2 @>
+    let gNodeMinus1 = removeNode n1 gStart
+    test <@ numberOfNodes gNodeMinus1 = 2 @>
+    test <@ numberOfEdges gNodeMinus1 = 1 @>
+    
+[<Fact>]
+let ``Change nodes and edges to graph`` () =
+    let g:Graph<string, string> = Graph.Empty
+    let g, n1 = addNode "1" g
+    let g, n2 = addNode "2" g
+    let g, n3 = addNode "3" g
+    let e1 = {nodes=EdgeNodes.construct n1 n2; edgeData="e12"}
+    let e2 = {nodes=EdgeNodes.construct n1 n3; edgeData="e13"}
+    let e3 = {nodes=EdgeNodes.construct n2 n3; edgeData="e23"}
+    let gStart= g |> addEdge e1 |> addEdge e2 |> addEdge e3
+    test <@ numberOfEdges gStart = 3 @>
+    test <@ numberOfNodes gStart = 3 @>
+    let changeNode1Graph = changeNode n1 "changed1" gStart
+    test <@ changeNode1Graph.IsSome @>
+    let changedNodeData = getNodeData n1 changeNode1Graph.Value
+    test <@ changedNodeData.Value = "changed1"  @>
+    test <@ numberOfEdges changeNode1Graph.Value = 3 @>
+    test <@ numberOfNodes changeNode1Graph.Value = 3 @> 
+    let changeEdge1Graph = changeEdge n1 n2 "changedE12" gStart
+    let changedEdgeData = getEdgeBetween n1 n2 changeEdge1Graph.Value
+    test <@ changedEdgeData.IsSome @>
+    test <@ changedEdgeData.Value.edgeData = "changedE12" @>
+    test <@ numberOfEdges changeEdge1Graph.Value = 3 @>
+    test <@ numberOfNodes changeEdge1Graph.Value = 3 @>   
+    
 
 [<Fact>]
 let ``Test Smiles Parser`` () =

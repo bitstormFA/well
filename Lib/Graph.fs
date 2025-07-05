@@ -47,7 +47,7 @@ type Node<'NodeData> =
     
 type GraphAdjecencyList<'EdgeData> = HashMap<NodeID, HashMap<NodeID, 'EdgeData>>
 
-let addEdgeData<'EdgeData> n1id (n2id:NodeID) (edgeData:'EdgeData) (adjecencyList:GraphAdjecencyList<'EdgeData>) : GraphAdjecencyList<'EdgeData> =
+let addEdgeData<'EdgeData> (n1id:NodeID) (n2id:NodeID) (edgeData:'EdgeData) (adjecencyList:GraphAdjecencyList<'EdgeData>) : GraphAdjecencyList<'EdgeData> =
     if containsKey n1id adjecencyList then
         let inner = adjecencyList[n1id] |> remove n2id |> add n2id edgeData
         adjecencyList |> remove n1id |> add n1id inner 
@@ -167,7 +167,7 @@ let addNodeFlow nodeData graph =
     let g, _ = addNode nodeData graph
     g
 
-let removeNode (nodeId:NodeID) (graph: Graph<'NodeData, 'EdgeData>) : Graph<'NodeData, 'EdgeData> =
+let removeNode (nodeId:NodeID) (graph: Graph<'NodeData, 'EdgeData>)  =
        {
            Graph.NodeData = remove nodeId graph.NodeData
            Graph.AdjecencyList = removeEdgesContaining nodeId graph.AdjecencyList
@@ -195,6 +195,29 @@ let addEdge (edge:Edge<'EdgeData>) (graph: Graph<'NodeData, 'EdgeData>): Graph<'
         {graph with AdjecencyList=addEdgeData edge.nodes.node1 edge.nodes.node2 edge.edgeData graph.AdjecencyList}
     else
         graph
+
+let changeNode (id:NodeID) (newData:'NodeData) (graph: Graph<'NodeData, 'EdgeData>): Graph<'NodeData, 'EdgeData> option =
+    match graph.NodeData.TryFind id with
+    | Some _ ->
+        let newGraph = {graph with NodeData=graph.NodeData |> remove id |> add id newData}
+        Some newGraph
+    | None -> None  
+
+let removeEdge (nid1:NodeID) (nid2:NodeID) (graph: Graph<'NodeData, 'EdgeData>) : Graph<'NodeData, 'EdgeData> =
+    let sid1, sid2 = orderNodeIDs nid1 nid2
+    if containsKey sid1 graph.AdjecencyList && containsKey sid2 graph.AdjecencyList[sid1] then
+        let inner = remove sid2 graph.AdjecencyList[sid1]
+        let outer = remove sid1 graph.AdjecencyList |> add sid1 inner
+        {graph with AdjecencyList=outer}
+    else
+        graph
+
+let changeEdge (nid1:NodeID) (nid2:NodeID) (newEdgeData:'EdgeData) (graph: Graph<'NodeData, 'EdgeData>) : Graph<'NodeData, 'EdgeData> option =
+    let sid1, sid2 = orderNodeIDs nid1 nid2
+    if containsKey sid1 graph.AdjecencyList && containsKey sid2 graph.AdjecencyList[sid1] then
+        removeEdge sid1 sid2 graph |> addEdge {nodes=EdgeNodes.construct sid1 sid2; edgeData=newEdgeData} |> Some
+    else
+        None
         
 let hasEdgeBetween (n1:NodeID) (n2: NodeID) (graph: Graph<_, _>) : bool =
     isDirectlyConnected n1 n2 graph

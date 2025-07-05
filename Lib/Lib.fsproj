@@ -9,6 +9,7 @@
     <Compile Include="Types.fs" />
     <Compile Include="Graph.fs" />
     <Compile Include="Smiles.fs" />
+    <Compile Include="Molecule.fs" />
   </ItemGroup>
   <PropertyGroup Condition="'$(OS)' == 'Windows_NT'">
     <PaketGroup>TorchSharp.Windows</PaketGroup>
@@ -17,7 +18,7 @@
     <PaketGroup>TorchSharp.Linux</PaketGroup>
   </PropertyGroup>
   <Target Name="EnsurePaketReferences" BeforeTargets="PrepareForBuild">
-    <Exec Command="paket.exe restore --group $(PaketGroup)" />
+    <Exec Command="/home/fab/.dotnet/tools/paket restore --group $(PaketGroup)" />
   </Target>
   <Import Project="..\.paket\Paket.Restore.targets" />
 </Project>
