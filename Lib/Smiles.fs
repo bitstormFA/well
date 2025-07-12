@@ -38,7 +38,7 @@ type ParseState = {
     member this.addAtomDefault a =
         match this.connectID with
         | Some connectTo ->
-            let connectAtom = getNodeData connectTo this.mol
+            let connectAtom = tryGetNodeData connectTo this.mol
             let bondType = if this.currentBondType.IsNone && connectAtom.Value.IsAromatic && a.IsAromatic then BondType.Aromatic else this.getCurrentBond.Type
             let newMol, newItems = if this.ez.IsNone then
                                        (addNodeToNode a connectTo (Bond.fromBondType bondType) this.mol)
@@ -79,7 +79,7 @@ type ParseState = {
         | true ->
             let rc = this.ringConnect[ringID]
             let bondType = if this.currentBondType.IsNone && this.mol.NodeData[rc.atomId].IsAromatic && this.mol.NodeData[this.connectID.Value].IsAromatic then BondType.Aromatic else this.getCurrentBond.Type
-            let edge = {nodes=EdgeNodes.construct rc.atomId this.connectID.Value; edgeData=Bond.fromBondType bondType}
+            let edge = {nodes=NodeIDSet.construct rc.atomId this.connectID.Value; edgeData=Bond.fromBondType bondType}
             let newMol = addEdge edge this.mol
             this.mol <- newMol
         | false -> raise (IndexOutOfRangeException($"Trying to close ring with id {ringID} that isn't open"))

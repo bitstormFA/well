@@ -2,6 +2,7 @@
 
 open FsUnitTyped
 open Lib.Types
+open Molecule
 open Swensen.Unquote
 open Xunit
 open FsUnit 
@@ -21,7 +22,7 @@ let ``Add nodes and edges to graph`` () =
     numberOfNodes g |> should equal 1
     numberOfEdges g |> should equal 0
     let g, nID2 = addNode "2" g
-    let edge = {nodes=EdgeNodes.construct nID1 nID2; edgeData="e1"}
+    let edge = {nodes=NodeIDSet.construct nID1 nID2; edgeData="e1"}
     let g  = addEdge edge g
     numberOfEdges g |> shouldEqual 1
     numberOfNodes g |> should equal 2
@@ -33,9 +34,9 @@ let ``Remove nodes and edges to graph`` () =
     let g, n1 = addNode "1" g
     let g, n2 = addNode "2" g
     let g, n3 = addNode "3" g
-    let e1 = {nodes=EdgeNodes.construct n1 n2; edgeData="e12"}
-    let e2 = {nodes=EdgeNodes.construct n1 n3; edgeData="e13"}
-    let e3 = {nodes=EdgeNodes.construct n2 n3; edgeData="e23"}
+    let e1 = {nodes=NodeIDSet.construct n1 n2; edgeData="e12"}
+    let e2 = {nodes=NodeIDSet.construct n1 n3; edgeData="e13"}
+    let e3 = {nodes=NodeIDSet.construct n2 n3; edgeData="e23"}
     let gStart= g |> addEdge e1 |> addEdge e2 |> addEdge e3
     test <@ numberOfEdges gStart = 3 @>
     test <@ numberOfNodes gStart = 3 @>
@@ -52,15 +53,15 @@ let ``Change nodes and edges to graph`` () =
     let g, n1 = addNode "1" g
     let g, n2 = addNode "2" g
     let g, n3 = addNode "3" g
-    let e1 = {nodes=EdgeNodes.construct n1 n2; edgeData="e12"}
-    let e2 = {nodes=EdgeNodes.construct n1 n3; edgeData="e13"}
-    let e3 = {nodes=EdgeNodes.construct n2 n3; edgeData="e23"}
+    let e1 = {nodes=NodeIDSet.construct n1 n2; edgeData="e12"}
+    let e2 = {nodes=NodeIDSet.construct n1 n3; edgeData="e13"}
+    let e3 = {nodes=NodeIDSet.construct n2 n3; edgeData="e23"}
     let gStart= g |> addEdge e1 |> addEdge e2 |> addEdge e3
     test <@ numberOfEdges gStart = 3 @>
     test <@ numberOfNodes gStart = 3 @>
     let changeNode1Graph = changeNode n1 "changed1" gStart
     test <@ changeNode1Graph.IsSome @>
-    let changedNodeData = getNodeData n1 changeNode1Graph.Value
+    let changedNodeData = tryGetNodeData n1 changeNode1Graph.Value
     test <@ changedNodeData.Value = "changed1"  @>
     test <@ numberOfEdges changeNode1Graph.Value = 3 @>
     test <@ numberOfNodes changeNode1Graph.Value = 3 @> 
@@ -121,7 +122,16 @@ let ``Test simple graph functions`` () =
     test <@ isDirectlyConnected 3 0 graph = false @>
     test <@ Option.isSome (getEdgeBetween 1 2 graph) @> 
     test <@ Option.isNone (getEdgeBetween 0 3 graph) @> 
-    
+
+[<Fact>]
+let ``Test graph properties`` () =
+    let graph = Graph.Empty
+    let withComment = addProperty "comment" (GraphProperties.Comment ["comment1"; "comment2"]) graph
+    test <@ hasProperty "comment" withComment @>
+    test <@ (getProperty "comment" withComment).Value = (GraphProperties.Comment ["comment1"; "comment2"]) @>
+    let removedComment = removeProperty "comment" withComment
+    test <@ hasProperty "comment" removedComment = false@>
+    test <@ (getProperty "comment" removedComment).IsNone  @>
 
 [<Fact>]
 let ``Test Dijkstra shortest path`` () =
@@ -151,3 +161,16 @@ let ``Test cycle base`` () =
     let mol = (smilesToMol input).Value.Head
     let cb = findMinimumCycleBasis mol
     test <@ cb.Length=3 @>
+
+[<Fact>]    
+let ``Test update valences``() =
+    let input = "Cc1ccccc1C"
+    let mol = (smilesToMol input).Value.Head
+    let molWithValences = updateImplicitHydrogens mol
+    let testAtom1 = getAtom 0 molWithValences
+    let testAtom2 = getAtom 1 molWithValences
+    test <@ (atomIDs molWithValences) |> Seq.length = 8@>
+    test <@ testAtom1.Hydrogens = Some 3@>
+    test <@ testAtom2.Hydrogens = Some 0@>
+    
+    

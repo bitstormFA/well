@@ -1,12 +1,13 @@
 module Lib.Graph
 
 open System.Text
-open FSharp.HashCollections.HashMap
+open FSharp.HashCollections
 open FSharpx.Collections
 open System.Collections.Generic
 open Lib.Types
 open FSharp.HashCollections
 open Microsoft.FSharp.Collections
+open Microsoft.FSharp.Reflection
 open Priority_Queue
 type NodeID = int
 type EdgeID = int
@@ -17,7 +18,7 @@ let orderNodeIDs (id1: NodeID) (id2: NodeID) : NodeID * NodeID =
     else
         id2, id1
 
-type EdgeNodes =
+type NodeIDSet =
     {
         node1: NodeID
         node2: NodeID 
@@ -35,7 +36,7 @@ type EdgeNodes =
 [<Struct>]
 type Edge<'EdgeData when 'EdgeData: equality> =
     {
-      nodes: EdgeNodes 
+      nodes: NodeIDSet 
       edgeData: 'EdgeData }
     
 [<Struct>]
@@ -48,16 +49,19 @@ type Node<'NodeData> =
 type GraphAdjecencyList<'EdgeData> = HashMap<NodeID, HashMap<NodeID, 'EdgeData>>
 
 let addEdgeData<'EdgeData> (n1id:NodeID) (n2id:NodeID) (edgeData:'EdgeData) (adjecencyList:GraphAdjecencyList<'EdgeData>) : GraphAdjecencyList<'EdgeData> =
-    if containsKey n1id adjecencyList then
-        let inner = adjecencyList[n1id] |> remove n2id |> add n2id edgeData
-        adjecencyList |> remove n1id |> add n1id inner 
+    if HashMap.containsKey n1id adjecencyList then
+        let inner = adjecencyList[n1id] |> HashMap.remove n2id |> HashMap.add n2id edgeData
+        adjecencyList |> HashMap.remove n1id |> HashMap.add n1id inner 
     else
-        let inner = empty |> add n2id edgeData
-        adjecencyList |> add n1id inner 
+        let inner = HashMap.empty |> HashMap.add n2id edgeData
+        adjecencyList |> HashMap.add n1id inner 
 
 let removeEdgesContaining (nID:NodeID) (adjecencyList:GraphAdjecencyList<'EdgeData>) : GraphAdjecencyList<'EdgeData> =
-    let outer = adjecencyList |> remove nID
-    outer |> toSeq |> Seq.filter (fun struct(_,v) -> not (containsKey nID v)) |> Seq.map (fun struct(k,v) -> KeyValuePair(k,v)) |> ofSeq
+    let outer = adjecencyList |> HashMap.remove nID
+    outer |> HashMap.toSeq
+    |> Seq.filter (fun struct(_,v) -> not (HashMap.containsKey nID v))
+    |> Seq.map (fun struct(k,v) -> KeyValuePair(k,v))
+    |> HashMap.ofSeq
 
 let edgesInAdjecencyList (adjecencyList:GraphAdjecencyList<_>) =
     adjecencyList |> Seq.map (|KeyValue|)|>
@@ -66,56 +70,76 @@ let edgesInAdjecencyList (adjecencyList:GraphAdjecencyList<_>) =
         Seq.map (|KeyValue|) |>
         Seq.map (fun (n2, ed) ->
             {
-              nodes = EdgeNodes.construct nodeID n2
+              nodes = NodeIDSet.construct nodeID n2
               edgeData = ed }))
     |> Seq.concat
     |> List.ofSeq
 
 let numberEdgesInAdjecencyList (adjecencyList:GraphAdjecencyList<_>) : int =
-    toSeq adjecencyList |>
-    Seq.map (fun struct(_,v) -> count v) |> Seq.sum
+    HashMap.toSeq adjecencyList |>
+    Seq.map (fun struct(_,v) -> HashMap.count v) |> Seq.sum
 
 let edgesWithNodeId (nID:NodeID) (adjecencyList:GraphAdjecencyList<'EdgeData>): Edge<'EdgeData> seq =
     edgesInAdjecencyList adjecencyList |> Seq.filter(fun e -> e.nodes.hasMember nID ) 
     
 let connectedNodes (nID:NodeID) (adjecencyList:GraphAdjecencyList<'EdgeData>): NodeID seq =
-    keys adjecencyList[nID]
+    HashMap.keys adjecencyList[nID]
+
+type GraphProperties =
+    | Comment of string list
     
 [<Struct>]
 type Graph<'NodeData, 'EdgeData when 'NodeData: equality and 'EdgeData: equality> =
     { NodeData: HashMap<NodeID, 'NodeData>
       AdjecencyList: GraphAdjecencyList<'EdgeData>
       LastId: int
+      Properties: HashMap<string,GraphProperties>
       }
 
     static member Empty:Graph<'EdgeData, 'NodeData> =
-        { NodeData = empty
-          AdjecencyList = empty
+        { NodeData = HashMap.empty
+          AdjecencyList = HashMap.empty
           LastId = -1
+          Properties = HashMap.empty
         }
 
 type MolGraph = Graph<Atom, Bond>
 
-let numberOfNodes (graph: Graph<_, _>) : int = count graph.NodeData
+let addProperty name property graph =
+    {graph with Properties=HashMap.add name property graph.Properties}
+
+let removeProperty propertyName graph =
+    {graph with Properties=HashMap.remove propertyName graph.Properties}
+    
+let getProperty propertyName graph : GraphProperties voption =
+    HashMap.tryFind propertyName graph.Properties
+    
+let hasProperty propertyName graph =
+    HashMap.containsKey propertyName graph.Properties
+
+let numberOfNodes (graph: Graph<_, _>) : int = HashMap.count graph.NodeData
 
 let nodesIDs graph =
-    keys graph.NodeData
+    HashMap.keys graph.NodeData
     
 let nodeData graph =
-    values graph.NodeData
+    HashMap.values graph.NodeData
 
 let nodes graph =
-    graph.NodeData |> toSeq |> Seq.map (fun struct (k,v) -> {Node.id=k; Node.data=v}) |> List.ofSeq
+    graph.NodeData |> HashMap.toSeq |> Seq.map (fun struct (k,v) -> {Node.id=k; Node.data=v}) |> List.ofSeq
 
 
 let nodeIndex graph =
     nodes graph |> List.mapi (fun i n -> i,n)
      
+let tryGetNodeData (nodeID:NodeID) graph =
+    graph.NodeData.TryFind nodeID
+    
 let getNodeData nodeID graph =
-    graph.NodeData.TryFind nodeID 
+    (tryGetNodeData nodeID graph).Value
     
 let getNodeLabel nodeID  graph =
-    let nodeData = getNodeData nodeID graph
+    let nodeData = tryGetNodeData nodeID graph
     match nodeData with
     | Some nd -> string(nd)
     | None -> ""
@@ -132,23 +156,23 @@ let nodeSets graph =
 let nodeSetIndex (graph: Graph<_, 'EdgeData>) =
     edges graph |> List.mapi (fun i e -> e.nodes, i ) |> Map.ofList
 
-let getNodeEdges (node:NodeID) (graph:Graph<_, 'EdgeData>) : Edge<'EdgeData> list =
+let nodeEdges (node:NodeID) (graph:Graph<_, 'EdgeData>) : Edge<'EdgeData> list =
     edges graph |>
     List.filter (fun e -> e.nodes.hasMember node)
 
 let getConnectedNodes (nodeID:NodeID) (graph:Graph<_,_>) : NodeID list =
-    getNodeEdges nodeID graph |>
+    nodeEdges nodeID graph |>
     List.map (fun e -> e.nodes.otherNode nodeID) |>
     List.choose id
 
 let isDirectlyConnected (node1:NodeID) (node2:NodeID) (graph:Graph<_,_>) : bool =
     let sorted1, sorted2 = orderNodeIDs node1 node2
-    containsKey sorted1 graph.AdjecencyList && containsKey sorted2 graph.AdjecencyList[sorted1]
+    HashMap.containsKey sorted1 graph.AdjecencyList && HashMap.containsKey sorted2 graph.AdjecencyList[sorted1]
 
 let getEdgeBetween (node1:NodeID) (node2:NodeID) (graph:Graph<_,_>) : Edge<'EdgeData> option =
     let sorted1, sorted2 = orderNodeIDs node1 node2
-    if containsKey sorted1 graph.AdjecencyList && containsKey sorted2 graph.AdjecencyList[sorted1] then
-        Some { nodes=EdgeNodes.construct sorted1 sorted2; edgeData=graph.AdjecencyList[sorted1][sorted2]}
+    if HashMap.containsKey sorted1 graph.AdjecencyList && HashMap.containsKey sorted2 graph.AdjecencyList[sorted1] then
+        Some { nodes=NodeIDSet.construct sorted1 sorted2; edgeData=graph.AdjecencyList[sorted1][sorted2]}
     else
         None 
     
@@ -158,9 +182,10 @@ let numberOfEdges (graph: Graph<_, _>) =
 let addNode (nodeData:'NodeData) (graph: Graph<_, _>) : Graph<_, _> * NodeID =
     let newID = graph.LastId + 1
     {
-        Graph.NodeData = add newID nodeData graph.NodeData
+        Graph.NodeData = HashMap.add newID nodeData graph.NodeData
         Graph.AdjecencyList = graph.AdjecencyList
         LastId = newID
+        Properties = graph.Properties
     }, newID
     
 let addNodeFlow nodeData graph =
@@ -169,53 +194,59 @@ let addNodeFlow nodeData graph =
 
 let removeNode (nodeId:NodeID) (graph: Graph<'NodeData, 'EdgeData>)  =
        {
-           Graph.NodeData = remove nodeId graph.NodeData
+           Graph.NodeData = HashMap.remove nodeId graph.NodeData
            Graph.AdjecencyList = removeEdgesContaining nodeId graph.AdjecencyList
            Graph.LastId = graph.LastId
+           Properties = graph.Properties
        }
        
 let findNodeWithID (nodeId:NodeID)(graph: Graph<'NodeData, 'EdgeData>) : 'NodeData voption =
-    tryFind nodeId graph.NodeData
+    HashMap.tryFind nodeId graph.NodeData
 
 let addNodeToNode (nodeData: 'NodeData) (connectID: NodeID) (edgeData: 'EdgeData) (graph: Graph<'NodeData, 'EdgeData>) : Graph<_,_> * (Edge<'EdgeData> * NodeID) option =
-    if not (containsKey connectID graph.NodeData) then graph, None  // the node to which should be connected is unknown
+    if not (HashMap.containsKey connectID graph.NodeData) then graph, None  // the node to which should be connected is unknown
     else
         let graph, newNodeID = graph |> addNode nodeData
         let n1ID, n2ID = orderNodeIDs newNodeID connectID  // make sure bonds are always in the same order so they can be identified
-        let edge = {nodes=EdgeNodes.construct n1ID n2ID; edgeData=edgeData}
+        let edge = {nodes=NodeIDSet.construct n1ID n2ID; edgeData=edgeData}
         let graph = {graph with AdjecencyList=graph.AdjecencyList |> addEdgeData n1ID n2ID edgeData}
         graph, Some (edge, newNodeID)
 
 let addNodeToNodeFlow (nodeData: 'NodeData) (connectID: NodeID) (edgeData: 'EdgeData) (graph: Graph<'NodeData, 'EdgeData>) : Graph<_,_> =
     let g, _ = addNodeToNode nodeData connectID edgeData graph
     g
-            
-let addEdge (edge:Edge<'EdgeData>) (graph: Graph<'NodeData, 'EdgeData>): Graph<'NodeData, 'EdgeData> =
-    if containsKey edge.nodes.node1 graph.NodeData && containsKey edge.nodes.node2 graph.NodeData then
-        {graph with AdjecencyList=addEdgeData edge.nodes.node1 edge.nodes.node2 edge.edgeData graph.AdjecencyList}
+
+let tryAddEdge (edge:Edge<'EdgeData>) (graph: Graph<'NodeData, 'EdgeData>): Graph<'NodeData, 'EdgeData> option =
+    if HashMap.containsKey edge.nodes.node1 graph.NodeData && HashMap.containsKey edge.nodes.node2 graph.NodeData then
+        Some {graph with AdjecencyList=addEdgeData edge.nodes.node1 edge.nodes.node2 edge.edgeData graph.AdjecencyList}
     else
-        graph
+        None
+
+let addEdge (edge:Edge<'EdgeData>) (graph: Graph<'NodeData, 'EdgeData>): Graph<'NodeData, 'EdgeData> =
+    match tryAddEdge edge graph with
+    | Some newGraph -> newGraph
+    | None -> graph
 
 let changeNode (id:NodeID) (newData:'NodeData) (graph: Graph<'NodeData, 'EdgeData>): Graph<'NodeData, 'EdgeData> option =
     match graph.NodeData.TryFind id with
     | Some _ ->
-        let newGraph = {graph with NodeData=graph.NodeData |> remove id |> add id newData}
+        let newGraph = {graph with NodeData=graph.NodeData |> HashMap.remove id |> HashMap.add id newData}
         Some newGraph
     | None -> None  
 
 let removeEdge (nid1:NodeID) (nid2:NodeID) (graph: Graph<'NodeData, 'EdgeData>) : Graph<'NodeData, 'EdgeData> =
     let sid1, sid2 = orderNodeIDs nid1 nid2
-    if containsKey sid1 graph.AdjecencyList && containsKey sid2 graph.AdjecencyList[sid1] then
-        let inner = remove sid2 graph.AdjecencyList[sid1]
-        let outer = remove sid1 graph.AdjecencyList |> add sid1 inner
+    if HashMap.containsKey sid1 graph.AdjecencyList && HashMap.containsKey sid2 graph.AdjecencyList[sid1] then
+        let inner = HashMap.remove sid2 graph.AdjecencyList[sid1]
+        let outer = HashMap.remove sid1 graph.AdjecencyList |> HashMap.add sid1 inner
         {graph with AdjecencyList=outer}
     else
         graph
 
 let changeEdge (nid1:NodeID) (nid2:NodeID) (newEdgeData:'EdgeData) (graph: Graph<'NodeData, 'EdgeData>) : Graph<'NodeData, 'EdgeData> option =
     let sid1, sid2 = orderNodeIDs nid1 nid2
-    if containsKey sid1 graph.AdjecencyList && containsKey sid2 graph.AdjecencyList[sid1] then
-        removeEdge sid1 sid2 graph |> addEdge {nodes=EdgeNodes.construct sid1 sid2; edgeData=newEdgeData} |> Some
+    if HashMap.containsKey sid1 graph.AdjecencyList && HashMap.containsKey sid2 graph.AdjecencyList[sid1] then
+        removeEdge sid1 sid2 graph |> addEdge {nodes=NodeIDSet.construct sid1 sid2; edgeData=newEdgeData} |> Some
     else
         None
         
@@ -376,7 +407,7 @@ let getPathToRoot (predecessors: Map<NodeID, NodeID>) (endNode:NodeID) =
     path |> List.ofSeq
     
 /// Represents a cycle as a set of edges.
-type Cycle = Set<EdgeNodes>
+type Cycle = Set<NodeIDSet>
 
 /// Represents the basis with both the cycle edges and their vector forms.
 type Basis = {
@@ -389,11 +420,11 @@ type Basis = {
 let empty = { Cycles = []; Vectors = [] }
 
 /// Converts a cycle (set of edges) into a binary vector.
-let toVector (edgeIndex: Map<EdgeNodes, int>) (edgeCount: int) (cycle: Cycle) =
+let toVector (edgeIndex: Map<NodeIDSet, int>) (edgeCount: int) (cycle: Cycle) =
     let vec = Array.zeroCreate<int> edgeCount
     for ns in cycle do
         let u,v = ns.node1, ns.node2
-        let idx = edgeIndex[(EdgeNodes.construct u v)]
+        let idx = edgeIndex[(NodeIDSet.construct u v)]
         vec[idx] <- 1
     vec
 
@@ -459,7 +490,7 @@ let findMinimumCycleBasis (graph: Graph<_,_>) =
         let sptEdges =
             predecessors
             |> Map.toList
-            |> List.map (fun (child, parent) -> EdgeNodes.construct child parent)
+            |> List.map (fun (child, parent) -> NodeIDSet.construct child parent)
             |> Set.ofList
 
         let nonTreeEdges = Set.difference (nodeSets graph |> Set.ofList) sptEdges
@@ -489,7 +520,7 @@ let findMinimumCycleBasis (graph: Graph<_,_>) =
     let sortedCandidates =
         candidateCycles
         |> List.distinctBy snd // Remove duplicate cycles
-        |> List.sortBy fst |> List.map (fun (i,s) -> i, (s |> Set.map(fun n -> EdgeNodes.construct (fst n) (snd n))) )
+        |> List.sortBy fst |> List.map (fun (i,s) -> i, (s |> Set.map(fun n -> NodeIDSet.construct (fst n) (snd n))) )
         
 
     for _, cycle in sortedCandidates do
