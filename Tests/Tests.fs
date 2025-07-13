@@ -166,11 +166,24 @@ let ``Test cycle base`` () =
 let ``Test update valences``() =
     let input = "Cc1ccccc1C"
     let mol = (smilesToMol input).Value.Head
-    let molWithValences = updateImplicitHydrogens mol
-    let testAtom1 = getAtom 0 molWithValences
-    let testAtom2 = getAtom 1 molWithValences
-    test <@ (atomIDs molWithValences) |> Seq.length = 8@>
-    test <@ testAtom1.Hydrogens = Some 3@>
-    test <@ testAtom2.Hydrogens = Some 0@>
+    let molWithImplicitHydrogens = updateImplicitHydrogens mol
+    let testAtom1 = getAtom 0 molWithImplicitHydrogens
+    let testAtom2 = getAtom 1 molWithImplicitHydrogens
+    test <@ (atomIDs molWithImplicitHydrogens) |> Seq.length = 8@>
+    test <@ testAtom1.Hydrogens = 0@>
+    test <@ testAtom1.ImplicitHydrogens = 3@>
+    test <@ testAtom2.Hydrogens = 0@>
+    test <@ testAtom2.ImplicitHydrogens = 0@>
+    let input2 = "[NH4+]"
+    let mol2 = (smilesToMol input2).Value.Head
+    let mol2WithValences = updateImplicitHydrogens mol2
+    let testAtom = getAtom 0 mol2WithValences
+    test <@ testAtom.Hydrogens = 4@>
+    test <@ testAtom.ImplicitHydrogens = 0@>
     
-    
+[<Fact>]    
+let ``Test check valences``() =
+    let input = "C[CH5]"
+    let mol = (smilesToMol input).Value.Head
+    let checkResults = checkValences mol
+    test <@ checkResults.Length = 1 @>

@@ -126,22 +126,24 @@ type Hybridization =
     
 type Atom =
     {
-        Symbol: Element
+        Element: Element
         Isotope: int option
         Chirality: Chirality option
-        Hydrogens: int option
-        Charge: int option
+        Hydrogens: int 
+        ImplicitHydrogens: int 
+        FormalCharge: int 
         IsAromatic: bool 
         AtomClass: int option
         Hybridization: Hybridization option
     }
     static member Default =
         {
-            Symbol = Element.C
+            Element = Element.C
             Isotope = None
             Chirality = None
-            Hydrogens = None
-            Charge = None
+            Hydrogens = 0
+            ImplicitHydrogens = 0
+            FormalCharge = 0
             IsAromatic = false
             AtomClass = None
             Hybridization = None
@@ -151,15 +153,13 @@ type Atom =
         if this.Isotope.IsSome then result.Append(this.Isotope.Value) |> ignore
         if this.Chirality.IsSome then result.Append(this.Chirality) |> ignore
         let symbol = if this.IsAromatic then
-                         this.Symbol.ToString().ToLower()
+                         this.Element.ToString().ToLower()
                      else
-                         this.Symbol.ToString()
+                         this.Element.ToString()
         result.Append(symbol) |> ignore
-        if this.Hydrogens.IsSome then result.Append("H") |> ignore; result.Append(this.Hydrogens) |> ignore
-        if this.Charge.IsSome then result.Append(this.Charge.Value) |> ignore
-        result.ToString()
-        
-        
+        if this.Hydrogens > 0 then result.Append(this.Hydrogens) |> ignore
+        if this.FormalCharge <> 0 then result.Append(this.FormalCharge) |> ignore
+        result.ToString()      
     
 
 let bondMap= Map [
@@ -288,6 +288,8 @@ let elementInfo = Map [
     Element.Cn,{Number = 112; Symbol = "Cn"; Name = "Copernicium"; Mass = 285; DisplayColor = ""; ElectronConfiguration = "[Rn] 5f14 6d10 7s2"; Electronegativity = None; ElectronAffinity = None; Radius = None; MinOxidation = 0; MaxOxidation = 0; Valences = [2; 4]} // MaxOxidation 0 in data, valences based on group trends (Hg is congener)
 ]
 
+let maxValences (element:Element) =
+    elementInfo[element].Valences |> List.max
 
 let aliphaticOrganic =
     [ "Cl", Element.Cl; "Br", Element.Br; "B", Element.B; "C", Element.B; "N", Element.N; "O", Element.O

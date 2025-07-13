@@ -85,10 +85,10 @@ type ParseState = {
         | false -> raise (IndexOutOfRangeException($"Trying to close ring with id {ringID} that isn't open"))
 
 let aliphatic_organic: Parser<Atom, ParseState> =  %[ "Cl"; "Br"; "B"; "C"; "N"; "O"; "S"; "P"; "F"; "I" ] |>>
-                                                   (fun s -> {Atom.Default with Symbol =(stringToElement s); IsAromatic=false})
+                                                   (fun s -> {Atom.Default with Element =(stringToElement s); IsAromatic=false})
     
 let aromatic_organic: Parser<Atom, ParseState> = %["b"; "c"; "n"; "o"; "s"; "p"] |>>
-                                                 (fun s -> {Atom.Default with Symbol =(stringToElement s); IsAromatic=true})
+                                                 (fun s -> {Atom.Default with Element =(stringToElement s); IsAromatic=true})
 
 let ws: Parser<unit, ParseState> = spaces
 
@@ -103,7 +103,13 @@ let hCount: Parser<int option, ParseState> = opt (
                           | Some n -> n
                           | None -> 1)
 
-let charge: Parser<int option, ParseState>= opt (%["+";"-"] >>. pint32)
+
+let psign: Parser<int, ParseState> = %% +. %['+'; '-'] -%> fun x -> if x = '+' then 1 else -1
+
+let charge: Parser<int, ParseState> = %% +. psign -- +. opt pint32 -%>
+                                      (fun s i -> match i with
+                                                  | Some n -> s * n
+                                                  | None -> s * 1)
 
 let atom_class: Parser<int option, ParseState> = opt ( %":" >>. pint32)
 
@@ -119,14 +125,15 @@ let bracket_atom: Parser<Atom, ParseState>  =
     -- +. symbol
     -- +. chiral
     -- +. hCount
-    -- +. charge
+    -- +. opt charge
     -- +. atom_class
     -- "]"
     -%> fun isotope symbol chiral hCount charge sClass   -> {Atom.Isotope=isotope
-                                                             Symbol=fst symbol
+                                                             Element=fst symbol
                                                              Chirality=chiral
-                                                             Hydrogens=hCount
-                                                             Charge=charge
+                                                             Hydrogens=Option.defaultValue 0 hCount
+                                                             FormalCharge=Option.defaultValue 0 charge
+                                                             ImplicitHydrogens=0
                                                              AtomClass=sClass
                                                              IsAromatic=snd symbol
                                                              Hybridization=None 
