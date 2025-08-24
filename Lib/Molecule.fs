@@ -88,7 +88,7 @@ let getBonds (atomID:AtomID) (molecule:MolGraph) : Bond list =
     nodeEdges atomID molecule |> List.map _.edgeData
 
 let bondsToValences (bonds: Bond list) : float =
-    bonds |> List.map(fun x -> x.Type) |> List.map bondTypeValenceContribution |> List.sum
+    bonds |> List.map(_.Type) |> List.map bondTypeValenceContribution |> List.sum
 
 let updateImplicitHydrogens (molecule:MolGraph) : MolGraph =
     let updater (atomID:AtomID) (contextMol:MolGraph) : Atom =
@@ -112,5 +112,7 @@ let checkValences (molecule:MolGraph): AtomCheckError list =
         let usedValences = int(bonds |> bondsToValences) + allHydrogens + charge 
         if usedValences > maxValences atom.Element then Some (TooManyValences (atomID, usedValences)) else None
     checkMolAtomsWithContext checker molecule 
-    
 
+let kekulize (molecule:MolGraph): MolGraph =
+    let nodesLabeledAromatic = filterNodes (fun (a:Atom) -> a.IsAromatic) molecule
+    molecule

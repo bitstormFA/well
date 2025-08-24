@@ -1,13 +1,12 @@
 module Lib.Graph
 
+open System.Collections
 open System.Text
 open FSharp.HashCollections
 open FSharpx.Collections
 open System.Collections.Generic
 open Lib.Types
-open FSharp.HashCollections
 open Microsoft.FSharp.Collections
-open Microsoft.FSharp.Reflection
 open Priority_Queue
 type NodeID = int
 type EdgeID = int
@@ -127,7 +126,6 @@ let nodeData graph =
 
 let nodes graph =
     graph.NodeData |> HashMap.toSeq |> Seq.map (fun struct (k,v) -> {Node.id=k; Node.data=v}) |> List.ofSeq
-
 
 let nodeIndex graph =
     nodes graph |> List.mapi (fun i n -> i,n)
@@ -272,7 +270,7 @@ type SearchType =
     | DFS
     | BFS
 
-let listNodes (startNode: NodeID) (searchType:SearchType) (graph: Graph<_, _>) : NodeID seq =
+let getNodes (startNode: NodeID) (searchType:SearchType) (graph: Graph<_, _>) : NodeID seq =
     let dq = LinkedList<NodeID>()
     let result = Set.empty
     dq.AddFirst(startNode) |> ignore
@@ -287,10 +285,10 @@ let listNodes (startNode: NodeID) (searchType:SearchType) (graph: Graph<_, _>) :
                
 
 let dfs (startNode: NodeID) (graph: Graph<_, _>) : NodeID seq =
-    listNodes startNode SearchType.DFS graph
+    getNodes startNode SearchType.DFS graph
     
 let bfs (startNode: NodeID) (graph: Graph<_, _>) : NodeID seq =
-    listNodes startNode SearchType.BFS graph
+    getNodes startNode SearchType.BFS graph
 
 let shortestPathWithWeights (startID:NodeID) (endID:NodeID) (getEdgeWeight:'EdgeData -> float) (graph: Graph<'NodeData, 'EdgeData>)  : float * NodeID list =
     let nodeQueue = SimplePriorityQueue<NodeID, float>()
@@ -530,3 +528,20 @@ let findMinimumCycleBasis (graph: Graph<_,_>) =
             | None -> ()
 
     basis.Cycles 
+
+let cycleNodes (cycle:Cycle) (graph:Graph<_,_>) =
+    cycle |> Set.map _.node1 |> Seq.map (fun x -> getNodeData x graph)
+
+let cycleEdges (cycle:Cycle) (graph:Graph<_,_>) =
+    cycle |> Seq.map (fun x -> getEdgeBetween x.node1 x.node2 graph) |> Seq.choose id
+    
+let filterNodes (predicate: 'NodeData -> bool) (graph:Graph<'NodeData,_>) : Node<'NodeData> list =
+    nodes graph |> List.filter (fun x -> predicate x.data)
+    
+let filterEdges (predicate: 'EdgeData -> bool) (graph:Graph<_,'EdgeData>) : Edge<'EdgeData> list =
+    edges graph |> List.filter (fun x -> predicate x.edgeData)
+    
+let mapNodes (mapper: 'NodeData -> 'NodeData) (graph:Graph<'NodeData,_>) : Graph<'NodeData,_> =
+    let newNodeData = graph.NodeData |> HashMap.toSeq |> Seq.map (fun struct(i, d) -> KeyValuePair(i ,(mapper d))) |> HashMap.ofSeq
+    {graph with NodeData=newNodeData}
+    

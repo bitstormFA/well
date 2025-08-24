@@ -187,3 +187,13 @@ let ``Test check valences``() =
     let mol = (smilesToMol input).Value.Head
     let checkResults = checkValences mol
     test <@ checkResults.Length = 1 @>
+    
+[<Fact>]
+let ``Test cycle handling``() =
+    let input = "CC(=O)Oc1ccccc1C(O)=O"
+    let mol = (smilesToMol input).Value.Head
+    let cb = findMinimumCycleBasis mol
+    test <@ cb.Length > 0 @>
+    let cycle1 = cb.Head
+    let nodesInCycle1 = cycleNodes cycle1 mol |> List.ofSeq
+    test <@ nodesInCycle1.Length >0  @>
