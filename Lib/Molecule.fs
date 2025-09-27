@@ -45,7 +45,7 @@ let getAtom (id:AtomID) (molecule:MolGraph) : Atom =
     getNodeData id molecule
 
 let addAtom (atom:Atom) (molecule:MolGraph) =
-    addNode atom molecule
+    addNodeFromNodeData atom molecule
     
 let removeAtom (atomID:AtomID) (molecule:MolGraph) =
     removeNode atomID molecule
@@ -113,6 +113,52 @@ let checkValences (molecule:MolGraph): AtomCheckError list =
         if usedValences > maxValences atom.Element then Some (TooManyValences (atomID, usedValences)) else None
     checkMolAtomsWithContext checker molecule 
 
+
+
 let kekulize (molecule:MolGraph): MolGraph =
-    let nodesLabeledAromatic = filterNodes (fun (a:Atom) -> a.IsAromatic) molecule
+    // // First, set all bonds to single bonds
+    // let singleBondMol =
+    //     let edges = molecule.Edges |> Seq.toList
+    //     let updateEdge edge =
+    //         { edge with edgeData = { edge.edgeData with Type = BondType.Single } }
+    //     { molecule with Edges = edges |> List.map updateEdge |> HashSet.ofList }
+
+    // // Helper to get connected atoms and their bonds for a given atom
+    // let getConnectedAtomsWithBonds (atomID: AtomID) (mol: MolGraph) : (Atom * Bond) list =
+    //     let edges = nodeEdges atomID mol
+    //     edges
+    //     |> List.map (fun edge ->
+    //     let mutable adjusted = false
+    //     let newEdges =
+    //         currentMol.Edges
+    //         |> Set.toList
+    //         |> List.map (fun edge ->
+    //             let atom1ID = edge.nodes.FirstNode
+    //             let atom2ID = edge.nodes.otherNode atom1ID |> Option.get
+    //             let atom1 = getNodeData atom1ID currentMol
+    //             let atom2 = getNodeData atom2ID currentMol
+
+    //             // Check if we can make this a double bond
+    //             let canBeDouble =
+    //                 match atom1.Element, atom2.Element with
+    //                 | Element.C, Element.C -> true  // Carbon-carbon double bonds are common
+    //                 | Element.N, Element.C when atom2.Hydrogens >= 1 -> true  // Nitrogen with hydrogen
+    //                 | Element.O, Element.C when atom2.Hydrogens >= 1 -> true  // Oxygen with hydrogen
+    //                 | _ -> false
+
+    //             if canBeDouble && edge.edgeData.Type = BondType.Single then
+    //                 adjusted <- true
+    //                 { edge with edgeData = { edge.edgeData with Type = BondType.Double } }
+    //             else
+    //                 edge)
+    //         |> HashSet.ofList
+
+    //     if adjusted then
+    //         tryAdjustBonds { currentMol with Edges = newEdges } (iterations - 1)
+    //     else
+    //         currentMol
+
+    // // Start with all single bonds and try to adjust
+    // tryAdjustBonds singleBondMol 10
+
     molecule

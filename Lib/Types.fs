@@ -1,7 +1,15 @@
 module Lib.Types
+open System.Collections
 open System.Text
+open FSharp.HashCollections
+open FSharpx.Collections
+open System.Collections.Generic
+open Microsoft.FSharp.Collections
+open Priority_Queue
 open Microsoft.FSharp.Reflection
 
+type NodeID = int
+type EdgeID = int
 type Smiles = string
 
 type Element =
@@ -12,64 +20,6 @@ type Element =
     |Sn|Sb|Te|I|Xe|Cs|Ba|La|Ce|Pr|Nd|Pm|Sm|Eu|Gd|Tb|Dy|Ho|Er|Tm|Yb|Lu|Hf
     |Ta|W|Re|Os|Ir|Pt|Au|Hg|Tl|Pb|Bi|Po|At|Rn|Fr|Ra|Ac|Th|Pa|U|Np|Pu|Am
     |Cm|Bk|Cf|Es|Fm|Md|No|Lr|Rf|Db|Sg|Bh|Hs|Mt|Ds|Rg|Cn|UNK
-
-let elementNames = FSharpType.GetUnionCases(typeof<Element>) 
-                   |> Array.map (fun case -> string(case.Name))
-
-let elementMap:Map<string, Element> = FSharpType.GetUnionCases(typeof<Element>) |>
-                                      Array.map (fun caseInfo ->
-                                         let keywordString = caseInfo.Name
-                                         let useName = if keywordString = "UNK" then
-                                                           "*"
-                                                       else
-                                                           keywordString
-                                         let duCase = FSharpValue.MakeUnion(caseInfo, [||]) :?> Element
-                                         (useName, duCase)) |> Map.ofArray
-                   
-let twoLetterElementNames = elementNames |> Array.filter (fun x -> x.Length = 2)
-
-type ElementInfo = {
-    Number: int
-    Symbol: string
-    Name: string
-    Mass: float
-    Radius: float option
-    DisplayColor: string
-    ElectronConfiguration: string
-    Electronegativity: float option
-    ElectronAffinity: float option
-    MinOxidation: int 
-    MaxOxidation: int
-    Valences: int list
-}
-
-let capitalizeFirstChar (s: string) =
-    if System.String.IsNullOrEmpty(s) then
-        s // Or "" depending on desired behavior for null/empty
-    else
-        let firstChar = System.Char.ToUpper(s[0])
-        let restOfString = s[1..]
-        string firstChar + restOfString
-        
-let tryStringToElement (elementSymbol: string) : Element option =
-    let firstUpperName =capitalizeFirstChar elementSymbol
-    elementMap.TryFind(firstUpperName)
-        
-let stringToElement elementSymbol =
-    match tryStringToElement elementSymbol with
-    | Some symbol -> symbol
-    | None -> Element.UNK
-        
-let allElementCasesAsStringList () : list<string> =
-    try
-        let unionType = typeof<Element>
-        FSharpType.GetUnionCases(unionType)
-        |> Array.map (fun caseInfo -> caseInfo.Name)
-        |> List.ofArray
-    with
-    | ex ->
-        eprintfn $"Error getting element case names: %s{ex.Message}"
-        [] // Return an empty list on error
 
 type BondType =
     | Single
@@ -83,13 +33,13 @@ type BondType =
     | Unknown
 
 type BondDirection =
-    | NoDirection 
+    | NoDirection
     | Up
     | Down
     | CisTrans1
     | CisTrans2
     | Unknown
-    
+
 let bondTypeValenceContribution (bt:BondType) =
     match bt with
     | Single -> 1.0
@@ -101,7 +51,7 @@ let bondTypeValenceContribution (bt:BondType) =
     | DativeSingle -> 1.0
     | BondType.Unknown -> 1.0
     | Ionic -> 0.0
-    
+
 type Chirality =
     | Clockwise
     | CounterClockwise
@@ -114,7 +64,7 @@ type Bond =
     }
     with
     static member fromBondType bt = {Type=bt; Conjugated=false; Direction=NoDirection}
-    
+
 type Hybridization =
     | S
     | SP
@@ -123,16 +73,16 @@ type Hybridization =
     | SP2D
     | SP3D
     | OTHER
-    
+
 type Atom =
     {
         Element: Element
         Isotope: int option
         Chirality: Chirality option
-        Hydrogens: int 
-        ImplicitHydrogens: int 
-        FormalCharge: int 
-        IsAromatic: bool 
+        Hydrogens: int
+        ImplicitHydrogens: int
+        FormalCharge: int
+        IsAromatic: bool
         AtomClass: int option
         Hybridization: Hybridization option
     }
@@ -159,8 +109,458 @@ type Atom =
         result.Append(symbol) |> ignore
         if this.Hydrogens > 0 then result.Append(this.Hydrogens) |> ignore
         if this.FormalCharge <> 0 then result.Append(this.FormalCharge) |> ignore
-        result.ToString()      
+        result.ToString()
+
+let orderNodeIDs (id1: NodeID) (id2: NodeID) : NodeID * NodeID =
+    if hash id1 < hash id2 then
+        id1, id2
+    else
+        id2, id1
+
+/// Represents an undirected edge between two nodes
+type NodeIDSet =
+    {
+        node1: NodeID
+        node2: NodeID 
+    }
+    static member construct (node1:NodeID) (node2:NodeID) =
+        let oid1, oid2 = orderNodeIDs node1 node2
+        {node1=oid1; node2=oid2}
+    member this.hasMember (node:NodeID) =
+        node = this.node1 || node = this.node2
+    member this.otherNode (node:NodeID) =
+        if node = this.node1 then Some this.node2
+        elif node = this.node2 then Some this.node1
+        else None
+
+[<Struct>]
+type Edge<'EdgeData when 'EdgeData: equality> =
+    {
+      nodes: NodeIDSet 
+      edgeData: 'EdgeData }
     
+[<Struct>]
+type Node<'NodeData> =
+    {
+        id: NodeID
+        data: 'NodeData
+    }
+    
+type GraphAdjecencyList<'EdgeData> = HashMap<NodeID, HashMap<NodeID, 'EdgeData>>
+
+/// Adds an edge to the adjacency list (helper function)
+let addEdgeData<'EdgeData> (n1id:NodeID) (n2id:NodeID) (edgeData:'EdgeData) (adjecencyList:GraphAdjecencyList<'EdgeData>) : GraphAdjecencyList<'EdgeData> =
+    if HashMap.containsKey n1id adjecencyList then
+        let inner = adjecencyList[n1id] |> HashMap.remove n2id |> HashMap.add n2id edgeData
+        adjecencyList |> HashMap.remove n1id |> HashMap.add n1id inner 
+    else
+        let inner = HashMap.empty |> HashMap.add n2id edgeData
+        adjecencyList |> HashMap.add n1id inner 
+
+/// Removes all edges connected to a specific node
+let removeEdgesContaining (nID:NodeID) (adjecencyList:GraphAdjecencyList<'EdgeData>) : GraphAdjecencyList<'EdgeData> =
+    let outer = adjecencyList |> HashMap.remove nID
+    let mutable result = HashMap.empty
+    for struct(k,v) in outer |> HashMap.toSeq do
+        if not (HashMap.containsKey nID v) then
+            result <- result |> HashMap.add k (HashMap.remove nID v)
+    result
+
+/// Converts adjacency list to a sequence of all edges
+let edgesInAdjecencyList (adjecencyList:GraphAdjecencyList<_>) =
+    adjecencyList
+    |> HashMap.toSeq
+    |> Seq.collect (fun struct(nodeID, dict) ->
+        dict
+        |> HashMap.toSeq
+        |> Seq.map (fun struct(n2, ed) ->
+            {
+              nodes = NodeIDSet.construct nodeID n2
+              edgeData = ed }))
+    |> List.ofSeq
+
+/// Counts total edges in adjacency list
+let numberEdgesInAdjecencyList (adjecencyList:GraphAdjecencyList<_>) : int =
+    HashMap.toSeq adjecencyList
+    |> Seq.sumBy (fun struct(_,v) -> HashMap.count v)
+
+/// Gets all edges connected to a specific node ID
+let edgesWithNodeId (nID:NodeID) (adjecencyList:GraphAdjecencyList<'EdgeData>): Edge<'EdgeData> seq =
+    edgesInAdjecencyList adjecencyList |> Seq.filter(fun e -> e.nodes.hasMember nID ) 
+    
+/// Gets connected nodes for a specific node ID
+let connectedNodes (nID:NodeID) (adjecencyList:GraphAdjecencyList<'EdgeData>): NodeID seq =
+    HashMap.keys adjecencyList[nID]
+
+type GraphProperties =
+    | Comment of string list
+    
+[<Struct>]
+type Graph<'NodeData, 'EdgeData when 'NodeData: equality and 'EdgeData: equality> =
+    { 
+        NodeData: HashMap<NodeID, 'NodeData>
+        AdjecencyList: GraphAdjecencyList<'EdgeData>
+        LastId: int
+        Properties: HashMap<string,GraphProperties>
+      }
+
+    static member Empty:Graph<'EdgeData, 'NodeData> =
+        { 
+            NodeData = HashMap.empty
+            AdjecencyList = HashMap.empty
+            LastId = -1
+            Properties = HashMap.empty
+        }
+
+type MolGraph = Graph<Atom, Bond>
+
+/// Adds a property to the graph
+let addProperty name property graph =
+    {graph with Properties=HashMap.add name property graph.Properties}
+
+/// Removes a property from the graph
+let removeProperty propertyName graph =
+    {graph with Properties=HashMap.remove propertyName graph.Properties}
+    
+/// Gets a property from the graph
+let getProperty propertyName graph : GraphProperties option =
+    HashMap.tryFind propertyName graph.Properties |> ValueOption.toOption
+    
+/// Checks if a property exists in the graph
+let hasProperty propertyName graph =
+    HashMap.containsKey propertyName graph.Properties
+
+/// Gets number of nodes in the graph
+let numberOfNodes (graph: Graph<_, _>) : int = HashMap.count graph.NodeData
+
+/// Gets all node IDs in the graph
+let nodesIDs graph =
+    HashMap.keys graph.NodeData
+    
+/// Gets all node data values in the graph
+let nodeData graph =
+    HashMap.values graph.NodeData
+
+/// Gets all nodes in the graph
+let nodes graph =
+    graph.NodeData
+    |> HashMap.toSeq
+    |> Seq.map (fun struct(k,v) -> {Node.id=k; Node.data=v})
+    |> List.ofSeq
+
+/// Gets all nodes with their indices
+let nodeIndex graph =
+    nodes graph |> List.mapi (fun i n -> i,n)
+     
+/// Tries to get node data for a specific ID
+let tryGetNodeData (nodeID:NodeID) graph =
+    HashMap.tryFind nodeID graph.NodeData |> ValueOption.toOption
+    
+/// Gets node data for a specific ID (throws if not found)
+let getNodeData nodeID graph =
+    match tryGetNodeData nodeID graph with
+    | Some data -> data
+    | None -> failwith $"Node {nodeID} not found"
+
+/// Gets label for a node
+let getNodeLabel nodeID  graph =
+    let nodeData = tryGetNodeData nodeID graph
+    match nodeData with
+    | Some nd -> string(nd)
+    | None -> ""
+
+/// Gets all edges in the graph
+let edges (graph: Graph<_, 'EdgeData>) : Edge<'EdgeData> list =
+    graph.AdjecencyList |> edgesInAdjecencyList
+
+/// Gets edge index mapping
+let edgeIndex (graph: Graph<_, 'EdgeData>) =
+    edges graph |> List.mapi (fun i e -> i,e) |> Map.ofList
+
+/// Gets node sets from edges
+let nodeSets graph =
+    edges graph |> List.map(fun x -> x.nodes)
+
+/// Gets node set index mapping
+let nodeSetIndex (graph: Graph<_, 'EdgeData>) =
+    edges graph |> List.mapi (fun i e -> e.nodes, i ) |> Map.ofList
+
+/// Gets all edges connected to a specific node
+let nodeEdges (node:NodeID) (graph:Graph<_, 'EdgeData>) : Edge<'EdgeData> list =
+    edges graph |>
+    List.filter (fun e -> e.nodes.hasMember node)
+
+/// Gets connected nodes for a specific node ID
+let getConnectedNodes (nodeID:NodeID) (graph:Graph<_,_>) : NodeID list =
+    nodeEdges nodeID graph |>
+    List.map (fun e -> e.nodes.otherNode nodeID) |>
+    List.choose id
+
+/// Checks if two nodes are directly connected
+let isDirectlyConnected (node1:NodeID) (node2:NodeID) (graph:Graph<_,_>) : bool =
+    let sorted1, sorted2 = orderNodeIDs node1 node2
+    HashMap.containsKey sorted1 graph.AdjecencyList && 
+    HashMap.containsKey sorted2 graph.AdjecencyList[sorted1]
+
+/// Gets edge between two nodes if it exists
+let getEdgeBetween (node1:NodeID) (node2:NodeID) (graph:Graph<_,_>) : Edge<'EdgeData> option =
+    let sorted1, sorted2 = orderNodeIDs node1 node2
+    if HashMap.containsKey sorted1 graph.AdjecencyList && 
+       HashMap.containsKey sorted2 graph.AdjecencyList[sorted1] then
+        Some { nodes=NodeIDSet.construct sorted1 sorted2; edgeData=graph.AdjecencyList[sorted1][sorted2]}
+    else
+        None 
+    
+/// Gets number of edges in the graph
+let numberOfEdges (graph: Graph<_, _>) =
+    graph.AdjecencyList |> numberEdgesInAdjecencyList
+    
+/// Adds a node to the graph
+let addNode (nodeData:'NodeData) (graph: Graph<_, _>) : Graph<_, _> * NodeID =
+    let newID = graph.LastId + 1
+    {
+        Graph.NodeData = HashMap.add newID nodeData graph.NodeData
+        Graph.AdjecencyList = graph.AdjecencyList
+        LastId = newID
+        Properties = graph.Properties
+    }, newID
+    
+/// Adds a node to the graph (flow version)
+let addNodeFlow nodeData graph =
+    let g, _ = addNode nodeData graph
+    g
+
+/// Removes a node from the graph
+let removeNode (nodeId:NodeID) (graph: Graph<'NodeData, 'EdgeData>)  =
+       {
+           Graph.NodeData = HashMap.remove nodeId graph.NodeData
+           Graph.AdjecencyList = removeEdgesContaining nodeId graph.AdjecencyList
+           LastId = graph.LastId
+           Properties = graph.Properties
+       }
+       
+/// Finds a node by ID
+let findNodeWithID (nodeId:NodeID)(graph: Graph<'NodeData, 'EdgeData>) : 'NodeData option =
+    HashMap.tryFind nodeId graph.NodeData |> ValueOption.toOption
+
+/// Adds a new node connected to an existing node
+let addNodeToNode (nodeData: 'NodeData) (connectID: NodeID) (edgeData: 'EdgeData) (graph: Graph<'NodeData, 'EdgeData>) : Graph<_,_> * (Edge<'EdgeData> * NodeID) option =
+    if not (HashMap.containsKey connectID graph.NodeData) then 
+        graph, None  // the node to which should be connected is unknown
+    else
+        let graph, newNodeID = graph |> addNode nodeData
+        let n1ID, n2ID = orderNodeIDs newNodeID connectID  // make sure bonds are always in the same order so they can be identified
+        let edge = {nodes=NodeIDSet.construct n1ID n2ID; edgeData=edgeData}
+        let graph = {graph with AdjecencyList=graph.AdjecencyList |> addEdgeData n1ID n2ID edgeData}
+        graph, Some (edge, newNodeID)
+
+/// Adds a new node connected to an existing node (flow version)
+let addNodeToNodeFlow (nodeData: 'NodeData) (connectID: NodeID) (edgeData: 'EdgeData) (graph: Graph<'NodeData, 'EdgeData>) : Graph<_,_> =
+    let g, _ = addNodeToNode nodeData connectID edgeData graph
+    g
+
+/// Tries to add an edge to the graph
+let tryAddEdge (edge:Edge<'EdgeData>) (graph: Graph<'NodeData, 'EdgeData>): Graph<'NodeData, 'EdgeData> option =
+    if HashMap.containsKey edge.nodes.node1 graph.NodeData && 
+       HashMap.containsKey edge.nodes.node2 graph.NodeData then
+        Some {graph with AdjecencyList=addEdgeData edge.nodes.node1 edge.nodes.node2 edge.edgeData graph.AdjecencyList}
+    else
+        None
+
+/// Adds an edge to the graph (fails if nodes don't exist)
+let addEdge (edge:Edge<'EdgeData>) (graph: Graph<'NodeData, 'EdgeData>): Graph<'NodeData, 'EdgeData> =
+    match tryAddEdge edge graph with
+    | Some newGraph -> newGraph
+    | None -> graph
+
+/// Changes node data
+let changeNode (id:NodeID) (newData:'NodeData) (graph: Graph<'NodeData, 'EdgeData>): Graph<'NodeData, 'EdgeData> option =
+    match HashMap.tryFind id graph.NodeData |> ValueOption.toOption with
+    | Some _ ->
+        let newGraph = {graph with NodeData=graph.NodeData |> HashMap.remove id |> HashMap.add id newData}
+        Some newGraph
+    | None -> None  
+
+/// Removes an edge between two nodes
+let removeEdge (nid1:NodeID) (nid2:NodeID) (graph: Graph<'NodeData, 'EdgeData>) : Graph<'NodeData, 'EdgeData> =
+    let sid1, sid2 = orderNodeIDs nid1 nid2
+    if HashMap.containsKey sid1 graph.AdjecencyList && 
+       HashMap.containsKey sid2 graph.AdjecencyList[sid1] then
+        let inner = HashMap.remove sid2 graph.AdjecencyList[sid1]
+        let outer = HashMap.remove sid1 graph.AdjecencyList |> HashMap.add sid1 inner
+        {graph with AdjecencyList=outer}
+    else
+        graph
+
+/// Changes edge data between two nodes
+let changeEdge (nid1:NodeID) (nid2:NodeID) (newEdgeData:'EdgeData) (graph: Graph<'NodeData, 'EdgeData>) : Graph<'NodeData, 'EdgeData> option =
+    let sid1, sid2 = orderNodeIDs nid1 nid2
+    if HashMap.containsKey sid1 graph.AdjecencyList && 
+       HashMap.containsKey sid2 graph.AdjecencyList[sid1] then
+        removeEdge sid1 sid2 graph |> addEdge {nodes=NodeIDSet.construct sid1 sid2; edgeData=newEdgeData} |> Some
+    else
+        None
+        
+/// Checks if there's an edge between two nodes
+let hasEdgeBetween (n1:NodeID) (n2: NodeID) (graph: Graph<_, _>) : bool =
+    isDirectlyConnected n1 n2 graph
+
+/// Gets atoms from a molecular graph
+let atoms (mol:MolGraph) =
+    edges mol
+
+/// Converts graph to DOT format string
+let dotGraph graph : string =               
+    let result = StringBuilder()
+    result.Append("graph {\n") |> ignore
+    graph.NodeData
+    |> Map.ofDict
+    |> Map.fold (fun (state:StringBuilder) k _ -> 
+        state.Append($"node_{k} [label=\"{getNodeLabel k graph}\"];\n")) result |> ignore
+    edges graph
+    |> Seq.fold (fun (result:StringBuilder) edge -> 
+        result.Append($"node_{edge.nodes.node1}--node_{edge.nodes.node2}[label=\"{edge.edgeData}\"];\n")) result |> ignore
+    result.Append("}\n") |> ignore
+    result.ToString()
+
+
+type SearchType =
+    | DFS
+    | BFS
+
+/// Gets nodes using specified search type (DFS or BFS)
+let getNodes (startNode: NodeID) (searchType:SearchType) (graph: Graph<_, _>) : NodeID seq =
+    let dq = LinkedList<NodeID>()
+    let result = Set.empty
+    dq.AddFirst(startNode) |> ignore
+    while dq.Count > 0 do
+        let current = dq.First.Value
+        dq.RemoveFirst()
+        if not (result.Contains current) then
+            result.Add current |> ignore
+            getConnectedNodes current graph
+            |> Seq.iter (fun x -> 
+                if searchType = DFS then 
+                    dq.AddFirst(x) |> ignore 
+                else 
+                    dq.AddLast(x) |> ignore)
+    result 
+               
+
+/// Performs depth-first search
+let dfs (startNode: NodeID) (graph: Graph<_, _>) : NodeID seq =
+    getNodes startNode SearchType.DFS graph
+    
+/// Performs breadth-first search
+let bfs (startNode: NodeID) (graph: Graph<_, _>) : NodeID seq =
+    getNodes startNode SearchType.BFS graph
+
+/// Finds shortest path with weights using Dijkstra's algorithm
+let shortestPathWithWeights (startID:NodeID) (endID:NodeID) (getEdgeWeight:'EdgeData -> float) (graph: Graph<'NodeData, 'EdgeData>)  : float * NodeID list =
+    let nodeQueue = SimplePriorityQueue<NodeID, float>()
+    let previousNodes = Dictionary<NodeID, NodeID>()
+    let dist = Dictionary<NodeID, float>()
+    nodesIDs graph |> Seq.iter (fun id ->
+                                    let initDist = if id = startID then 0.0 else infinity
+                                    nodeQueue.Enqueue(id,initDist)
+                                    dist[id] <- initDist)
+    
+    while nodeQueue.Count > 0 do
+        let currentNode = nodeQueue.Dequeue()
+        let currenDist = dist[currentNode]
+        for connected in getConnectedNodes currentNode graph do
+            let edge = (getEdgeBetween currentNode connected graph).Value
+            let weight = getEdgeWeight edge.edgeData
+            let connectedDist = weight + currenDist
+            if connectedDist < dist[connected] then
+                dist[connected] <- connectedDist 
+                previousNodes[connected] <- currentNode
+                nodeQueue.UpdatePriority(connected, connectedDist)
+                
+    let path = ResizeArray<NodeID>()
+    let mutable currentNode = endID
+    while currentNode <> startID do
+        path.Add currentNode
+        currentNode <- previousNodes[currentNode]
+    path.Add startID
+    dist[endID], (path |> List.ofSeq |> List.rev)
+ 
+/// Finds shortest path without weights
+let shortestPath (startID:NodeID) (endID:NodeID) (graph: Graph<'NodeData, 'EdgeData>) : float * NodeID list =
+    shortestPathWithWeights startID endID (fun _ -> 1.0) graph 
+    
+/// Implements Floyd-Warshall algorithm for all-pairs shortest paths
+let floydWarshallWeight (graph: Graph<'NodeData, 'EdgeData>) (getEdgeWeight:'EdgeData -> float) =
+    let n = numberOfNodes graph
+    let dist = Array2D.init n n (fun i j -> if i = j then 0.0 else infinity)
+    let prev = Array2D.init n n (fun x y -> if x = y then x else -1)
+
+    for e in edges graph do
+        let fromID = e.nodes.node1 
+        let toID = e.nodes.node2
+        let weight = getEdgeWeight e.edgeData  
+        dist[fromID, toID] <- weight
+        dist[toID, fromID] <- weight
+        prev[fromID, toID] <- fromID
+        prev[toID, fromID] <- toID
+
+let elementNames = FSharpType.GetUnionCases(typeof<Element>)
+                   |> Array.map (fun case -> string(case.Name))
+
+let elementMap:Map<string, Element> = FSharpType.GetUnionCases(typeof<Element>) |>
+                                      Array.map (fun caseInfo ->
+                                         let keywordString = caseInfo.Name
+                                         let useName = if keywordString = "UNK" then
+                                                           "*"
+                                                       else
+                                                           keywordString
+                                         let duCase = FSharpValue.MakeUnion(caseInfo, [||]) :?> Element
+                                         (useName, duCase)) |> Map.ofArray
+
+let twoLetterElementNames = elementNames |> Array.filter (fun x -> x.Length = 2)
+
+type ElementInfo = {
+    Number: int
+    Symbol: string
+    Name: string
+    Mass: float
+    Radius: float option
+    DisplayColor: string
+    ElectronConfiguration: string
+    Electronegativity: float option
+    ElectronAffinity: float option
+    MinOxidation: int
+    MaxOxidation: int
+    Valences: int list
+}
+
+let capitalizeFirstChar (s: string) =
+    if System.String.IsNullOrEmpty(s) then
+        s // Or "" depending on desired behavior for null/empty
+    else
+        let firstChar = System.Char.ToUpper(s[0])
+        let restOfString = s[1..]
+        string firstChar + restOfString
+
+let tryStringToElement (elementSymbol: string) : Element option =
+    let firstUpperName =capitalizeFirstChar elementSymbol
+    elementMap.TryFind(firstUpperName)
+
+let stringToElement elementSymbol =
+    match tryStringToElement elementSymbol with
+    | Some symbol -> symbol
+    | None -> Element.UNK
+
+let allElementCasesAsStringList () : list<string> =
+    try
+        let unionType = typeof<Element>
+        FSharpType.GetUnionCases(unionType)
+        |> Array.map (fun caseInfo -> caseInfo.Name)
+        |> List.ofArray
+    with
+    | ex ->
+        eprintfn $"Error getting element case names: %s{ex.Message}"
+        [] // Return an empty list on error
 
 let bondMap= Map [
     "-", BondType.Single
@@ -169,9 +569,8 @@ let bondMap= Map [
     "$", BondType.Quadruple
     ":", BondType.Aromatic
     "/", BondType.Single
-    @"\", BondType.Single 
+    @"\", BondType.Single
 ]
-
 
 let elementInfo = Map [
     Element.H,{Number = 1; Symbol = "H"; Name = "Hydrogen"; Mass = 1.00794; DisplayColor = "#ffffff"; ElectronConfiguration = "1s1"; Electronegativity = Some 2.2; ElectronAffinity = Some -73; Radius = Some 37; MinOxidation = -1; MaxOxidation = 1; Valences = [1; -1]}
@@ -196,7 +595,7 @@ let elementInfo = Map [
     Element.Ca,{Number = 20; Symbol = "Ca"; Name = "Calcium"; Mass = 40.078; DisplayColor = "#3dff00"; ElectronConfiguration = "[Ar] 4s2"; Electronegativity = Some 1; ElectronAffinity = Some -2; Radius = Some 174; MinOxidation = 0; MaxOxidation = 2; Valences = [2]}
     Element.Sc,{Number = 21; Symbol = "Sc"; Name = "Scandium"; Mass = 44.955912; DisplayColor = "#e6e6e6"; ElectronConfiguration = "[Ar] 3d1 4s2"; Electronegativity = Some 1.36; ElectronAffinity = Some -18; Radius = Some 144; MinOxidation = 0; MaxOxidation = 3; Valences = [3]}
     Element.Ti,{Number = 22; Symbol = "Ti"; Name = "Titanium"; Mass = 47.867; DisplayColor = "#bfc2c7"; ElectronConfiguration = "[Ar] 3d2 4s2"; Electronegativity = Some 1.54; ElectronAffinity = Some -8; Radius = Some 136; MinOxidation = -1; MaxOxidation = 4; Valences = [4; 3; 2]}
-    Element.V,{Number = 23; Symbol = "V"; Name = "Vanadium"; Mass = 50.9415; DisplayColor = "#a6a6ab"; ElectronConfiguration = "[Ar] 3d3 4s2"; Electronegativity = Some 1.63; ElectronAffinity = Some -51; Radius = Some 125; MinOxidation = -1; MaxOxidation = 4; Valences = [4; 3; 2]} // MaxOxidation in data is 4. Common V valency is +5. Sticking to data's MaxOxidation.
+    Element.V,{Number = 23; Symbol = "V"; Name = "Vanadium"; Mass = 50.9415; DisplayColor = "#a6a6ab"; ElectronConfiguration = "[Ar] 3d3 4s2"; Electronegativity = Some 1.63; ElectronAffinity = Some -51; Radius = Some 125; MinOxidation = -1; MaxOxidation = 4; Valences = [4; 3; 2]}
     Element.Cr,{Number = 24; Symbol = "Cr"; Name = "Chromium"; Mass = 51.9961; DisplayColor = "#8a99c7"; ElectronConfiguration = "[Ar] 3d5 4s1"; Electronegativity = Some 1.66; ElectronAffinity = Some -64; Radius = Some 127; MinOxidation = -2; MaxOxidation = 6; Valences = [6; 3; 2]}
     Element.Mn,{Number = 25; Symbol = "Mn"; Name = "Manganese"; Mass = 54.938045; DisplayColor = "#9c7ac7"; ElectronConfiguration = "[Ar] 3d5 4s2"; Electronegativity = Some 1.55; ElectronAffinity = Some 0; Radius = Some 139; MinOxidation = -3; MaxOxidation = 7; Valences = [7; 6; 4; 3; 2]}
     Element.Fe,{Number = 26; Symbol = "Fe"; Name = "Iron"; Mass = 55.845; DisplayColor = "#e06633"; ElectronConfiguration = "[Ar] 3d6 4s2"; Electronegativity = Some 1.83; ElectronAffinity = Some -16; Radius = Some 125; MinOxidation = -2; MaxOxidation = 6; Valences = [6; 3; 2]}
@@ -278,23 +677,23 @@ let elementInfo = Map [
     Element.No,{Number = 102; Symbol = "No"; Name = "Nobelium"; Mass = 259; DisplayColor = "#bd0d87"; ElectronConfiguration = "[Rn] 5f14 7s2"; Electronegativity = Some 1.3; ElectronAffinity = None; Radius = None; MinOxidation = 0; MaxOxidation = 3; Valences = [3; 2]}
     Element.Lr,{Number = 103; Symbol = "Lr"; Name = "Lawrencium"; Mass = 262; DisplayColor = "#c70066"; ElectronConfiguration = "[Rn] 5f14 7s2 7p1"; Electronegativity = Some 1.3; ElectronAffinity = None; Radius = None; MinOxidation = 0; MaxOxidation = 3; Valences = [3]}
     Element.Rf,{Number = 104; Symbol = "Rf"; Name = "Rutherfordium"; Mass = 267; DisplayColor = "#cc0059"; ElectronConfiguration = "[Rn] 5f14 6d2 7s2"; Electronegativity = None; ElectronAffinity = None; Radius = None; MinOxidation = 0; MaxOxidation = 4; Valences = [4]}
-    Element.Db,{Number = 105; Symbol = "Db"; Name = "Dubnium"; Mass = 268; DisplayColor = "#d1004f"; ElectronConfiguration = "[Rn] 5f14 6d3 7s2"; Electronegativity = None; ElectronAffinity = None; Radius = None; MinOxidation = 0; MaxOxidation = 0; Valences = [5; 4; 3]} // MaxOxidation 0 in data, valences based on group trends
-    Element.Sg,{Number = 106; Symbol = "Sg"; Name = "Seaborgium"; Mass = 271; DisplayColor = "#d90045"; ElectronConfiguration = "[Rn] 5f14 6d4 7s2"; Electronegativity = None; ElectronAffinity = None; Radius = None; MinOxidation = 0; MaxOxidation = 0; Valences = [6; 5; 4]} // MaxOxidation 0 in data, valences based on group trends
-    Element.Bh,{Number = 107; Symbol = "Bh"; Name = "Bohrium"; Mass = 272; DisplayColor = "#e00038"; ElectronConfiguration = "[Rn] 5f14 6d5 7s2"; Electronegativity = None; ElectronAffinity = None; Radius = None; MinOxidation = 0; MaxOxidation = 0; Valences = [7; 5; 4]} // MaxOxidation 0 in data, valences based on group trends
-    Element.Hs,{Number = 108; Symbol = "Hs"; Name = "Hassium"; Mass = 270; DisplayColor = "#e6002e"; ElectronConfiguration = "[Rn] 5f14 6d6 7s2"; Electronegativity = None; ElectronAffinity = None; Radius = None; MinOxidation = 0; MaxOxidation = 0; Valences = [8; 6; 4; 2]} // MaxOxidation 0 in data, valences based on group trends
-    Element.Mt,{Number = 109; Symbol = "Mt"; Name = "Meitnerium"; Mass = 276; DisplayColor = "#eb0026"; ElectronConfiguration = "[Rn] 5f14 6d7 7s2"; Electronegativity = None; ElectronAffinity = None; Radius = None; MinOxidation = 0; MaxOxidation = 0; Valences = [6; 4; 3]} // MaxOxidation 0 in data, valences based on group trends (Ir is congener)
-    Element.Ds,{Number = 110; Symbol = "Ds"; Name = "Darmstadtium"; Mass = 281; DisplayColor = ""; ElectronConfiguration = "[Rn] 5f14 6d9 7s1"; Electronegativity = None; ElectronAffinity = None; Radius = None; MinOxidation = 0; MaxOxidation = 0; Valences = [6; 4; 2; 0]} // MaxOxidation 0 in data, valences based on group trends (Pt is congener)
-    Element.Rg,{Number = 111; Symbol = "Rg"; Name = "Roentgenium"; Mass = 280; DisplayColor = ""; ElectronConfiguration = "[Rn] 5f14 6d10 7s1"; Electronegativity = None; ElectronAffinity = None; Radius = None; MinOxidation = 0; MaxOxidation = 0; Valences = [5; 3; 1]} // MaxOxidation 0 in data, valences based on group trends (Au is congener)
-    Element.Cn,{Number = 112; Symbol = "Cn"; Name = "Copernicium"; Mass = 285; DisplayColor = ""; ElectronConfiguration = "[Rn] 5f14 6d10 7s2"; Electronegativity = None; ElectronAffinity = None; Radius = None; MinOxidation = 0; MaxOxidation = 0; Valences = [2; 4]} // MaxOxidation 0 in data, valences based on group trends (Hg is congener)
+    Element.Db,{Number = 105; Symbol = "Db"; Name = "Dubnium"; Mass = 268; DisplayColor = "#d1004f"; ElectronConfiguration = "[Rn] 5f14 6d3 7s2"; Electronegativity = None; ElectronAffinity = None; Radius = None; MinOxidation = 0; MaxOxidation = 0; Valences = [5; 4; 3]}
+    Element.Sg,{Number = 106; Symbol = "Sg"; Name = "Seaborgium"; Mass = 271; DisplayColor = "#d90045"; ElectronConfiguration = "[Rn] 5f14 6d4 7s2"; Electronegativity = None; ElectronAffinity = None; Radius = None; MinOxidation = 0; MaxOxidation = 0; Valences = [6; 5; 4]}
+    Element.Bh,{Number = 107; Symbol = "Bh"; Name = "Bohrium"; Mass = 272; DisplayColor = "#e00038"; ElectronConfiguration = "[Rn] 5f14 6d5 7s2"; Electronegativity = None; ElectronAffinity = None; Radius = None; MinOxidation = 0; MaxOxidation = 0; Valences = [7; 5; 4]}
+    Element.Hs,{Number = 108; Symbol = "Hs"; Name = "Hassium"; Mass = 270; DisplayColor = "#e6002e"; ElectronConfiguration = "[Rn] 5f14 6d6 7s2"; Electronegativity = None; ElectronAffinity = None; Radius = None; MinOxidation = 0; MaxOxidation = 0; Valences = [8; 6; 4; 2]}
+    Element.Mt,{Number = 109; Symbol = "Mt"; Name = "Meitnerium"; Mass = 276; DisplayColor = "#eb0026"; ElectronConfiguration = "[Rn] 5f14 6d7 7s2"; Electronegativity = None; ElectronAffinity = None; Radius = None; MinOxidation = 0; MaxOxidation = 0; Valences = [6; 4; 3]}
+    Element.Ds,{Number = 110; Symbol = "Ds"; Name = "Darmstadtium"; Mass = 281; DisplayColor = ""; ElectronConfiguration = "[Rn] 5f14 6d9 7s1"; Electronegativity = None; ElectronAffinity = None; Radius = None; MinOxidation = 0; MaxOxidation = 0; Valences = [6; 4; 2; 0]}
+    Element.Rg,{Number = 111; Symbol = "Rg"; Name = "Roentgenium"; Mass = 280; DisplayColor = ""; ElectronConfiguration = "[Rn] 5f14 6d10 7s1"; Electronegativity = None; ElectronAffinity = None; Radius = None; MinOxidation = 0; MaxOxidation = 0; Valences = [5; 3; 1]}
+    Element.Cn,{Number = 112; Symbol = "Cn"; Name = "Copernicium"; Mass = 285; DisplayColor = ""; ElectronConfiguration = "[Rn] 5f14 6d10 7s2"; Electronegativity = None; ElectronAffinity = None; Radius = None; MinOxidation = 0; MaxOxidation = 0; Valences = [2; 4]}
 ]
 
 let maxValences (element:Element) =
     elementInfo[element].Valences |> List.max
 
 let aliphaticOrganic =
-    [ "Cl", Element.Cl; "Br", Element.Br; "B", Element.B; "C", Element.B; "N", Element.N; "O", Element.O
+    [ "Cl", Element.Cl; "Br", Element.Br; "B", Element.B; "C", Element.C; "N", Element.N; "O", Element.O
       "S", Element.S; "P", Element.P; "F", Element.F; "I", Element.I ] |> Map.ofList
 
 let aromaticOrganic =
-                       ["b", Element.B; "c", Element.C; "n", Element.N; "o", Element.O
-                        "s", Element.S; "p", Element.P] |> Map.ofList
+    ["b", Element.B; "c", Element.C; "n", Element.N; "o", Element.O
+     "s", Element.S; "p", Element.P] |> Map.ofList

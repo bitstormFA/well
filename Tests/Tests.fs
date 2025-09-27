@@ -18,10 +18,10 @@ let ``Create Empty graph`` () =
 [<Fact>]
 let ``Add nodes and edges to graph`` () =
     let g:Graph<string, string> = Graph.Empty
-    let g, nID1 = addNode "1" g
+    let g, nID1 = addNodeFromNodeData "1" g
     numberOfNodes g |> should equal 1
     numberOfEdges g |> should equal 0
-    let g, nID2 = addNode "2" g
+    let g, nID2 = addNodeFromNodeData "2" g
     let edge = {nodes=NodeIDSet.construct nID1 nID2; edgeData="e1"}
     let g  = addEdge edge g
     numberOfEdges g |> shouldEqual 1
@@ -31,9 +31,9 @@ let ``Add nodes and edges to graph`` () =
 [<Fact>]
 let ``Remove nodes and edges to graph`` () =
     let g:Graph<string, string> = Graph.Empty
-    let g, n1 = addNode "1" g
-    let g, n2 = addNode "2" g
-    let g, n3 = addNode "3" g
+    let g, n1 = addNodeFromNodeData "1" g
+    let g, n2 = addNodeFromNodeData "2" g
+    let g, n3 = addNodeFromNodeData "3" g
     let e1 = {nodes=NodeIDSet.construct n1 n2; edgeData="e12"}
     let e2 = {nodes=NodeIDSet.construct n1 n3; edgeData="e13"}
     let e3 = {nodes=NodeIDSet.construct n2 n3; edgeData="e23"}
@@ -50,9 +50,9 @@ let ``Remove nodes and edges to graph`` () =
 [<Fact>]
 let ``Change nodes and edges to graph`` () =
     let g:Graph<string, string> = Graph.Empty
-    let g, n1 = addNode "1" g
-    let g, n2 = addNode "2" g
-    let g, n3 = addNode "3" g
+    let g, n1 = addNodeFromNodeData "1" g
+    let g, n2 = addNodeFromNodeData "2" g
+    let g, n3 = addNodeFromNodeData "3" g
     let e1 = {nodes=NodeIDSet.construct n1 n2; edgeData="e12"}
     let e2 = {nodes=NodeIDSet.construct n1 n3; edgeData="e13"}
     let e3 = {nodes=NodeIDSet.construct n2 n3; edgeData="e23"}
@@ -115,7 +115,7 @@ let ``Test simple graph functions`` () =
     edgesInAdjecencyList graph.AdjecencyList |> List.length |> shouldEqual 13 
     let removedAL = removeEdgesContaining 0 graph.AdjecencyList
     test <@ (edgesInAdjecencyList removedAL).Length = 12 @>
-    test <@ getConnectedNodes 1 graph |> Set.ofSeq = (Set [0;2;3]) @>
+    test <@ getConnectedNodeIDs 1 graph |> Set.ofSeq = (Set [0;2;3]) @>
     test <@ isDirectlyConnected 2 1 graph = true  @>
     test <@ isDirectlyConnected 1 2 graph = true  @>
     test <@ isDirectlyConnected 0 3 graph = false @>
@@ -197,3 +197,21 @@ let ``Test cycle handling``() =
     let cycle1 = cb.Head
     let nodesInCycle1 = cycleNodes cycle1 mol |> List.ofSeq
     test <@ nodesInCycle1.Length >0  @>
+
+[<Fact>]
+let ``Test kekulize function`` () =
+    let input = "c1ccccc1"
+    let mol = (smilesToMol input).Value.Head
+    let kekulizedMol = kekulize mol
+    test <@ numberOfNodes kekulizedMol = 6 @>
+    test <@ numberOfEdges kekulizedMol = 6 @>
+    // Verify that the graph has alternating single and double bonds (kekulization)
+    let edges = getAllEdges kekulizedMol
+    let edgeCount = edges |> Seq.length
+    test <@ edgeCount = 6 @>
+    // Test with a molecule that is not aromatic to see if it handles gracefully
+    let input2 = "CC"
+    let mol2 = (smilesToMol input2).Value.Head
+    let kekulizedMol2 = kekulize mol2
+    test <@ numberOfNodes kekulizedMol2 = 2 @>
+    test <@ numberOfEdges kekulizedMol2 = 1 @>

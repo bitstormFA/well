@@ -54,7 +54,7 @@ type ParseState = {
             | Some (_, newNodeID) -> this.connectID <- Some newNodeID; this.currentBondType <- None; Some newNodeID
             | None -> None  
         | None ->
-            let newMol, newNodeId = addNode a this.mol
+            let newMol, newNodeId = addNodeFromNodeData a this.mol
             this.mol <- newMol
             this.connectID <- Some newNodeId
             Some this.connectID.Value
