@@ -14,7 +14,34 @@ let orderNodeIDs (id1: NodeID) (id2: NodeID) : NodeID * NodeID =
     else
         id2, id1
 
+let updateAllEdgeData (updater: 'EdgeData -> 'EdgeData) (g:Graph<_,'EdgeData>) : Graph<_, 'EdgeData> =
+    let updateConnections (transform: 'EdgeData -> 'EdgeData) (v:HashMap<_, 'EdgeDate>) : HashMap<_, 'EdgeDate> =
+        v |>
+        toSeq |>
+        Seq.map (fun struct(k,v) -> (k, (transform v))) |>
+        Seq.map KeyValuePair |>
+        ofSeq
+        
+    let newAL = g.AdjecencyList |>
+                toSeq |>
+                Seq.map (fun struct(k,v) -> k, (updateConnections updater v)) |>
+                Seq.map KeyValuePair |>
+                ofSeq
+    {g with AdjecencyList=newAL}
     
+let updateAllNodeData (updater: 'NodeData -> 'NodeData) (g: Graph<'NodeData, _>): Graph<'NodeData, _> =
+    let newNodes = g.Nodes |> toSeq |> Seq.map (fun struct(k,v) -> KeyValuePair(k, updater v)) |> ofSeq
+    {g with Nodes = newNodes }
+    
+let updateNode (n:Node<'NodeData>) (g:Graph<'NodeData, _>):Graph<'NodeData, _> =
+    let newNodes = g.Nodes |> remove n.id |> add n.id n.data
+    {g with Nodes = newNodes}
+    
+let updateEdge (e:Edge<'EdgeData>) (g:Graph<_, 'EdgeData>):Graph<_, 'EdgeData> =
+    let id1, id2 = e.nodes.orderedIDs
+    let oldConnections = (tryFind id1 g.AdjecencyList).Value
+    let newConnections = oldConnections |> remove id2 |> add id2 e.edgeData
+    {g with AdjecencyList = g.AdjecencyList |> remove id1 |> add id1 newConnections }
 
 let addEdgeData<'EdgeData> (n1id:NodeID) (n2id:NodeID) (edgeData:'EdgeData) (adjecencyList:GraphAdjecencyList<'EdgeData>) : GraphAdjecencyList<'EdgeData> =
     if containsKey n1id adjecencyList then
@@ -71,22 +98,22 @@ let getProperty propertyName graph : GraphProperties voption =
 let hasProperty propertyName graph =
     containsKey propertyName graph.Properties
 
-let numberOfNodes (graph: Graph<_, _>) : int = count graph.NodeData
+let numberOfNodes (graph: Graph<_, _>) : int = count graph.Nodes
 
 let nodesIDs graph =
-    keys graph.NodeData
-    
+    keys graph.Nodes
+
 let nodesData graph =
-    values graph.NodeData
+    values graph.Nodes
 
 let nodes graph =
-    graph.NodeData |> toSeq |> Seq.map (fun struct (k,v) -> {Node.id=k; Node.data=v}) |> List.ofSeq
+    graph.Nodes |> toSeq |> Seq.map (fun struct (k,v) -> {Node.id=k; Node.data=v}) |> List.ofSeq
 
 let nodeIndex graph =
     nodes graph |> List.mapi (fun i n -> i,n)
      
 let tryGetNodeData (nodeID:NodeID) graph =
-    graph.NodeData.TryFind nodeID
+    graph.Nodes.TryFind nodeID
     
 let getNodeData nodeID graph =
     (tryGetNodeData nodeID graph).Value
@@ -119,7 +146,7 @@ let getConnectedNodeIDs (nodeID:NodeID) (graph:Graph<_,_>) : NodeID list =
     List.choose id
     
 let getNode (nodeID:NodeID) (graph:Graph<_,_>) : Node<_> option =
-    match tryFind nodeID graph.NodeData with
+    match tryFind nodeID graph.Nodes with
     | ValueSome nodeData -> Some {id=nodeID; data=nodeData}
     | ValueNone -> None
 
@@ -150,7 +177,7 @@ let numberOfEdges (graph: Graph<_, _>) =
 let addNodeFromNodeData (nodeData:'NodeData) (graph: Graph<_, _>) : Graph<_, _> * NodeID =
     let newID = graph.LastId + 1
     {
-        Graph.NodeData = add newID nodeData graph.NodeData
+        Graph.Nodes = add newID nodeData graph.Nodes
         Graph.AdjecencyList = graph.AdjecencyList
         LastId = newID
         Properties = graph.Properties
@@ -162,17 +189,17 @@ let addNodeFlow nodeData graph =
 
 let removeNode (nodeId:NodeID) (graph: Graph<'NodeData, 'EdgeData>)  =
        {
-           Graph.NodeData = remove nodeId graph.NodeData
+           Graph.Nodes = remove nodeId graph.Nodes
            Graph.AdjecencyList = removeEdgesContaining nodeId graph.AdjecencyList
            Graph.LastId = graph.LastId
            Properties = graph.Properties
        }
        
 let findNodeWithID (nodeId:NodeID)(graph: Graph<'NodeData, 'EdgeData>) : 'NodeData voption =
-    tryFind nodeId graph.NodeData
+    tryFind nodeId graph.Nodes
 
 let addNodeToNode (nodeData: 'NodeData) (connectID: NodeID) (edgeData: 'EdgeData) (graph: Graph<'NodeData, 'EdgeData>) : Graph<_,_> * (Edge<'EdgeData> * NodeID) option =
-    if not (containsKey connectID graph.NodeData) then graph, None  // the node to which should be connected is unknown
+    if not (containsKey connectID graph.Nodes) then graph, None  // the node to which should be connected is unknown
     else
         let graph, newNodeID = graph |> addNodeFromNodeData nodeData
         let n1ID, n2ID = orderNodeIDs newNodeID connectID  // make sure bonds are always in the same order so they can be identified
@@ -185,7 +212,7 @@ let addNodeToNodeFlow (nodeData: 'NodeData) (connectID: NodeID) (edgeData: 'Edge
     g
 
 let tryAddEdge (edge:Edge<'EdgeData>) (graph: Graph<'NodeData, 'EdgeData>): Graph<'NodeData, 'EdgeData> option =
-    if containsKey edge.nodes.node1 graph.NodeData && containsKey edge.nodes.node2 graph.NodeData then
+    if containsKey edge.nodes.node1 graph.Nodes && containsKey edge.nodes.node2 graph.Nodes then
         Some {graph with AdjecencyList=addEdgeData edge.nodes.node1 edge.nodes.node2 edge.edgeData graph.AdjecencyList}
     else
         None
@@ -199,7 +226,7 @@ let atoms (mol:MolGraph) =
 let dotGraph graph : string =               
     let result = StringBuilder()
     result.Append("graph {\n") |> ignore
-    graph.NodeData
+    graph.Nodes
     |> Map.ofDict
     |> Map.fold (fun (state:StringBuilder) k _ -> state.Append($"node_{k} [label=\"{getNodeLabel k graph}\"];\n")) result |> ignore
     edges graph
@@ -484,6 +511,6 @@ let filterEdges (predicate: 'EdgeData -> bool) (graph:Graph<_,'EdgeData>) : Edge
     edges graph |> List.filter (fun x -> predicate x.edgeData)
     
 let mapNodes (mapper: 'NodeData -> 'NodeData) (graph:Graph<'NodeData,_>) : Graph<'NodeData,_> =
-    let newNodeData = graph.NodeData |> toSeq |> Seq.map (fun struct(i, d) -> KeyValuePair(i ,(mapper d))) |> ofSeq
-    {graph with NodeData=newNodeData}
+    let newNodeData = graph.Nodes |> toSeq |> Seq.map (fun struct(i, d) -> KeyValuePair(i ,(mapper d))) |> ofSeq
+    {graph with Nodes=newNodeData}
     

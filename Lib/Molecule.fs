@@ -9,70 +9,71 @@ open FSharp.HashCollections
 type AtomID = NodeID
 
 type BondedAtom =
-    {Bond:Bond; Atom:Atom}
+    {Bond: BondData; Atom: AtomData }
 
+type Atom = Node<AtomData>
+
+type Bond = Edge<BondData>
 
 let atomIDs (molecule:MolGraph) : AtomID seq =
     nodesIDs molecule
 
-let updateAtoms (updater:Atom -> Atom) (molecule:MolGraph) : MolGraph =
-    let newNodeData = molecule.NodeData |>
-                      Seq.map (|KeyValue|) |>
-                      Seq.map (fun (id, atom) -> id, (updater atom)) |>
-                      Seq.map KeyValuePair |>
-                      HashMap.ofSeq
-    {molecule with NodeData=newNodeData}
-
-type AtomUpdater = AtomID -> MolGraph -> Atom
+let updateAtomData (updater: AtomData -> AtomData) (molecule:MolGraph) : MolGraph =
+    updateAllNodeData updater molecule
+    
+let updateBondData (updater: BondData -> BondData) (molecule:MolGraph) : MolGraph =
+    updateAllEdgeData updater molecule
 
 type AtomCheckError =
     | TooManyValences of AtomID * int
 
 type AtomChecker = AtomID -> MolGraph -> AtomCheckError option
 
+type AtomUpdater = AtomID -> MolGraph -> AtomData
+
 let updateAtomsWithContext (updater: AtomUpdater) (molecule:MolGraph) : MolGraph =
     let newNodeData = nodesIDs molecule |>
                       Seq.map (fun id -> id, (updater id molecule)) |>
                       Seq.map KeyValuePair |>
                       HashMap.ofSeq
-    {molecule with NodeData=newNodeData}
+    {molecule with Nodes=newNodeData}
     
 let checkMolAtomsWithContext (checker: AtomChecker) (molecule:MolGraph) : AtomCheckError list =
     nodesIDs molecule |>
     Seq.map (fun id -> checker id molecule) |> Seq.choose id |> List.ofSeq
 
-let getAtom (id:AtomID) (molecule:MolGraph) : Atom =
+let getAtom (id:AtomID) (molecule:MolGraph) : AtomData =
     getNodeData id molecule
 
-let addAtom (atom:Atom) (molecule:MolGraph) =
+let addAtom (atom: AtomData) (molecule:MolGraph) =
     addNodeFromNodeData atom molecule
     
 let removeAtom (atomID:AtomID) (molecule:MolGraph) =
     removeNode atomID molecule
     
-let tryAddBond (atomID1: AtomID) (atomID2: AtomID) (bond:Bond) (molecule:MolGraph)=
+let tryAddBond (atomID1: AtomID) (atomID2: AtomID) (bond: BondData) (molecule:MolGraph)=
     let edge = {edgeData=bond; nodes = NodeIDSet.construct atomID1 atomID2 }
     tryAddEdge edge molecule
     
-let addBond (atomID1: AtomID) (atomID2: AtomID) (bond:Bond) (molecule:MolGraph) =
+let addBond (atomID1: AtomID) (atomID2: AtomID) (bond: BondData) (molecule:MolGraph) =
     let edge = {Edge.nodes=NodeIDSet.construct atomID1 atomID2; edgeData=bond}
     addEdge edge molecule
     
 let removeBond (atomID1: AtomID) (atomID2: AtomID) (molecule:MolGraph) =
     removeEdge atomID1 atomID2 molecule
     
-let tryChangeAtom (atomID: AtomID) (atom:Atom) (molecule:MolGraph) =
+let tryChangeAtom (atomID: AtomID) (atom: AtomData) (molecule:MolGraph) =
     changeNode atomID atom molecule
     
-let changeAtom (atomID: AtomID) (atom:Atom) (molecule:MolGraph) =
+let changeAtom (atomID: AtomID) (atom: AtomData) (molecule:MolGraph) =
     match tryChangeAtom atomID atom molecule with
     | Some newMol -> newMol
     | None -> molecule
     
-let tryChangeBond (atomID1: AtomID) (atomID2: AtomID) (bond:Bond) (molecule:MolGraph) =
+let tryChangeBond (atomID1: AtomID) (atomID2: AtomID) (bond: BondData) (molecule:MolGraph) =
     changeEdge atomID1 atomID2 bond molecule
     
-let changeBond (atomID1: AtomID) (atomID2: AtomID) (bond:Bond) (molecule:MolGraph) =
+let changeBond (atomID1: AtomID) (atomID2: AtomID) (bond: BondData) (molecule:MolGraph) =
     match tryChangeBond atomID1 atomID2 bond molecule with
     | Some newMol -> newMol
     | None -> molecule
@@ -84,14 +85,14 @@ let getConnectedAtomsAndBonds (atomID:AtomID) (molecule:MolGraph) : BondedAtom l
     let connectedEdged = nodeEdges atomID molecule
     connectedEdged |> List.map (fun edge -> edge.edgeData, (getNodeData (edge.nodes.otherNode atomID).Value molecule)) |> List.map (fun (b,a) -> {Bond=b; Atom=a})
     
-let getBonds (atomID:AtomID) (molecule:MolGraph) : Bond list =
+let getBonds (atomID:AtomID) (molecule:MolGraph) : BondData list =
     nodeEdges atomID molecule |> List.map _.edgeData
 
-let bondsToValences (bonds: Bond list) : float =
+let bondsToValences (bonds: BondData list) : float =
     bonds |> List.map(_.Type) |> List.map bondTypeValenceContribution |> List.sum
 
 let updateImplicitHydrogens (molecule:MolGraph) : MolGraph =
-    let updater (atomID:AtomID) (contextMol:MolGraph) : Atom =
+    let updater (atomID:AtomID) (contextMol:MolGraph) : AtomData =
         let bonds = getBonds atomID contextMol
         let atom = getAtom atomID molecule
         let explicitHydrogens = atom.Hydrogens 
@@ -113,52 +114,68 @@ let checkValences (molecule:MolGraph): AtomCheckError list =
         if usedValences > maxValences atom.Element then Some (TooManyValences (atomID, usedValences)) else None
     checkMolAtomsWithContext checker molecule 
 
+let allBonds (molecule:MolGraph) =
+    edges molecule
+    
+let singleBondedMolecule (m:MolGraph) =
+    let updater (b: BondData) : BondData = {b with Type=BondType.Single}
+    updateBondData updater m 
 
+// Helper function to kekulize a single ring
+let kekulizeRing (molecule: MolGraph) (cycle: Set<NodeIDSet>) : MolGraph =
+    // Get the edges in this cycle
+    let cycleEdgesList = cycleEdges cycle molecule |> List.ofSeq
+
+    // Filter to only aromatic bonds in this cycle
+    let aromaticEdgesInCycle =
+        cycleEdgesList
+        |> List.filter (fun edge -> edge.edgeData.Type = BondType.Aromatic)
+
+    // If no aromatic bonds in this cycle, return unchanged
+    if List.isEmpty aromaticEdgesInCycle then
+        molecule
+    else
+        // Try to assign alternating single/double bonds
+        // Start with the first edge as single, then alternate
+        let rec assignBonds (mol: MolGraph) (edges: Edge<BondData> list) (isDouble: bool) =
+            match edges with
+            | [] -> mol
+            | edge::rest ->
+                let newBondType = if isDouble then BondType.Double else BondType.Single
+                let newBondData = {edge.edgeData with Type = newBondType}
+                let updatedMol = changeBond edge.nodes.node1 edge.nodes.node2 newBondData mol
+                assignBonds updatedMol rest (not isDouble)
+
+        // For rings with even number of aromatic bonds, start with single
+        // For rings with odd number (which shouldn't happen in valid aromatic rings), handle gracefully
+        assignBonds molecule aromaticEdgesInCycle false
 
 let kekulize (molecule:MolGraph): MolGraph =
-    // // First, set all bonds to single bonds
-    // let singleBondMol =
-    //     let edges = molecule.Edges |> Seq.toList
-    //     let updateEdge edge =
-    //         { edge with edgeData = { edge.edgeData with Type = BondType.Single } }
-    //     { molecule with Edges = edges |> List.map updateEdge |> HashSet.ofList }
+    // Find all cycles in the molecule
+    let cycles = findMinimumCycleBasis molecule
 
-    // // Helper to get connected atoms and their bonds for a given atom
-    // let getConnectedAtomsWithBonds (atomID: AtomID) (mol: MolGraph) : (Atom * Bond) list =
-    //     let edges = nodeEdges atomID mol
-    //     edges
-    //     |> List.map (fun edge ->
-    //     let mutable adjusted = false
-    //     let newEdges =
-    //         currentMol.Edges
-    //         |> Set.toList
-    //         |> List.map (fun edge ->
-    //             let atom1ID = edge.nodes.FirstNode
-    //             let atom2ID = edge.nodes.otherNode atom1ID |> Option.get
-    //             let atom1 = getNodeData atom1ID currentMol
-    //             let atom2 = getNodeData atom2ID currentMol
+    // Get all aromatic bonds that need to be kekulized
+    let aromaticBonds =
+        allBonds molecule
+        |> List.filter (fun bond -> bond.edgeData.Type = BondType.Aromatic)
 
-    //             // Check if we can make this a double bond
-    //             let canBeDouble =
-    //                 match atom1.Element, atom2.Element with
-    //                 | Element.C, Element.C -> true  // Carbon-carbon double bonds are common
-    //                 | Element.N, Element.C when atom2.Hydrogens >= 1 -> true  // Nitrogen with hydrogen
-    //                 | Element.O, Element.C when atom2.Hydrogens >= 1 -> true  // Oxygen with hydrogen
-    //                 | _ -> false
+    // If no aromatic bonds, return the molecule unchanged
+    if List.isEmpty aromaticBonds then
+        molecule
+    else
+        // Find cycles that contain aromatic bonds
+        let aromaticCycles =
+            cycles
+            |> List.filter (fun cycle ->
+                let cycleEdgeData = cycleEdges cycle molecule |> List.ofSeq
+                cycleEdgeData |> List.exists (fun edge -> edge.edgeData.Type = BondType.Aromatic))
 
-    //             if canBeDouble && edge.edgeData.Type = BondType.Single then
-    //                 adjusted <- true
-    //                 { edge with edgeData = { edge.edgeData with Type = BondType.Double } }
-    //             else
-    //                 edge)
-    //         |> HashSet.ofList
+        // Start with the original molecule and try to kekulize each aromatic cycle
+        let rec kekulizeCycles (mol: MolGraph) (remainingCycles: Set<NodeIDSet> list) =
+            match remainingCycles with
+            | [] -> mol
+            | cycle::rest ->
+                let kekulizedMol = kekulizeRing mol cycle
+                kekulizeCycles kekulizedMol rest
 
-    //     if adjusted then
-    //         tryAdjustBonds { currentMol with Edges = newEdges } (iterations - 1)
-    //     else
-    //         currentMol
-
-    // // Start with all single bonds and try to adjust
-    // tryAdjustBonds singleBondMol 10
-
-    molecule
+        kekulizeCycles molecule aromaticCycles

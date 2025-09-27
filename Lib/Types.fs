@@ -56,7 +56,7 @@ type Chirality =
     | Clockwise
     | CounterClockwise
 
-type Bond =
+type BondData =
     {
         Type:BondType
         Conjugated: bool
@@ -74,7 +74,7 @@ type Hybridization =
     | SP3D
     | OTHER
 
-type Atom =
+type AtomData =
     {
         Element: Element
         Isotope: int option
@@ -132,6 +132,8 @@ type NodeIDSet =
         if node = this.node1 then Some this.node2
         elif node = this.node2 then Some this.node1
         else None
+    member this.orderedIDs =
+        orderNodeIDs this.node1 this.node2
 
 [<Struct>]
 type Edge<'EdgeData when 'EdgeData: equality> =
@@ -197,22 +199,22 @@ type GraphProperties =
     
 [<Struct>]
 type Graph<'NodeData, 'EdgeData when 'NodeData: equality and 'EdgeData: equality> =
-    { 
-        NodeData: HashMap<NodeID, 'NodeData>
+    {
+        Nodes: HashMap<NodeID, 'NodeData>
         AdjecencyList: GraphAdjecencyList<'EdgeData>
         LastId: int
         Properties: HashMap<string,GraphProperties>
       }
 
     static member Empty:Graph<'EdgeData, 'NodeData> =
-        { 
-            NodeData = HashMap.empty
+        {
+            Nodes = HashMap.empty
             AdjecencyList = HashMap.empty
             LastId = -1
             Properties = HashMap.empty
         }
 
-type MolGraph = Graph<Atom, Bond>
+type MolGraph = Graph<AtomData, BondData>
 
 /// Adds a property to the graph
 let addProperty name property graph =
@@ -231,19 +233,19 @@ let hasProperty propertyName graph =
     HashMap.containsKey propertyName graph.Properties
 
 /// Gets number of nodes in the graph
-let numberOfNodes (graph: Graph<_, _>) : int = HashMap.count graph.NodeData
+let numberOfNodes (graph: Graph<_, _>) : int = HashMap.count graph.Nodes
 
 /// Gets all node IDs in the graph
 let nodesIDs graph =
-    HashMap.keys graph.NodeData
-    
+    HashMap.keys graph.Nodes
+
 /// Gets all node data values in the graph
 let nodeData graph =
-    HashMap.values graph.NodeData
+    HashMap.values graph.Nodes
 
 /// Gets all nodes in the graph
 let nodes graph =
-    graph.NodeData
+    graph.Nodes
     |> HashMap.toSeq
     |> Seq.map (fun struct(k,v) -> {Node.id=k; Node.data=v})
     |> List.ofSeq
@@ -254,7 +256,7 @@ let nodeIndex graph =
      
 /// Tries to get node data for a specific ID
 let tryGetNodeData (nodeID:NodeID) graph =
-    HashMap.tryFind nodeID graph.NodeData |> ValueOption.toOption
+    HashMap.tryFind nodeID graph.Nodes |> ValueOption.toOption
     
 /// Gets node data for a specific ID (throws if not found)
 let getNodeData nodeID graph =
@@ -319,7 +321,7 @@ let numberOfEdges (graph: Graph<_, _>) =
 let addNode (nodeData:'NodeData) (graph: Graph<_, _>) : Graph<_, _> * NodeID =
     let newID = graph.LastId + 1
     {
-        Graph.NodeData = HashMap.add newID nodeData graph.NodeData
+        Graph.Nodes = HashMap.add newID nodeData graph.Nodes
         Graph.AdjecencyList = graph.AdjecencyList
         LastId = newID
         Properties = graph.Properties
@@ -333,7 +335,7 @@ let addNodeFlow nodeData graph =
 /// Removes a node from the graph
 let removeNode (nodeId:NodeID) (graph: Graph<'NodeData, 'EdgeData>)  =
        {
-           Graph.NodeData = HashMap.remove nodeId graph.NodeData
+           Graph.Nodes = HashMap.remove nodeId graph.Nodes
            Graph.AdjecencyList = removeEdgesContaining nodeId graph.AdjecencyList
            LastId = graph.LastId
            Properties = graph.Properties
@@ -341,11 +343,11 @@ let removeNode (nodeId:NodeID) (graph: Graph<'NodeData, 'EdgeData>)  =
        
 /// Finds a node by ID
 let findNodeWithID (nodeId:NodeID)(graph: Graph<'NodeData, 'EdgeData>) : 'NodeData option =
-    HashMap.tryFind nodeId graph.NodeData |> ValueOption.toOption
+    HashMap.tryFind nodeId graph.Nodes |> ValueOption.toOption
 
 /// Adds a new node connected to an existing node
 let addNodeToNode (nodeData: 'NodeData) (connectID: NodeID) (edgeData: 'EdgeData) (graph: Graph<'NodeData, 'EdgeData>) : Graph<_,_> * (Edge<'EdgeData> * NodeID) option =
-    if not (HashMap.containsKey connectID graph.NodeData) then 
+    if not (HashMap.containsKey connectID graph.Nodes) then 
         graph, None  // the node to which should be connected is unknown
     else
         let graph, newNodeID = graph |> addNode nodeData
@@ -361,8 +363,8 @@ let addNodeToNodeFlow (nodeData: 'NodeData) (connectID: NodeID) (edgeData: 'Edge
 
 /// Tries to add an edge to the graph
 let tryAddEdge (edge:Edge<'EdgeData>) (graph: Graph<'NodeData, 'EdgeData>): Graph<'NodeData, 'EdgeData> option =
-    if HashMap.containsKey edge.nodes.node1 graph.NodeData && 
-       HashMap.containsKey edge.nodes.node2 graph.NodeData then
+    if HashMap.containsKey edge.nodes.node1 graph.Nodes && 
+       HashMap.containsKey edge.nodes.node2 graph.Nodes then
         Some {graph with AdjecencyList=addEdgeData edge.nodes.node1 edge.nodes.node2 edge.edgeData graph.AdjecencyList}
     else
         None
@@ -375,9 +377,9 @@ let addEdge (edge:Edge<'EdgeData>) (graph: Graph<'NodeData, 'EdgeData>): Graph<'
 
 /// Changes node data
 let changeNode (id:NodeID) (newData:'NodeData) (graph: Graph<'NodeData, 'EdgeData>): Graph<'NodeData, 'EdgeData> option =
-    match HashMap.tryFind id graph.NodeData |> ValueOption.toOption with
+    match HashMap.tryFind id graph.Nodes |> ValueOption.toOption with
     | Some _ ->
-        let newGraph = {graph with NodeData=graph.NodeData |> HashMap.remove id |> HashMap.add id newData}
+        let newGraph = {graph with Nodes=graph.Nodes |> HashMap.remove id |> HashMap.add id newData}
         Some newGraph
     | None -> None  
 
@@ -413,7 +415,7 @@ let atoms (mol:MolGraph) =
 let dotGraph graph : string =               
     let result = StringBuilder()
     result.Append("graph {\n") |> ignore
-    graph.NodeData
+    graph.Nodes
     |> Map.ofDict
     |> Map.fold (fun (state:StringBuilder) k _ -> 
         state.Append($"node_{k} [label=\"{getNodeLabel k graph}\"];\n")) result |> ignore

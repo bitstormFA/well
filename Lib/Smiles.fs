@@ -32,22 +32,22 @@ type ParseState = {
                                 ez = None 
                                 }
     member this.setCurrentBond b = this.currentBondType <- b
-    member this.getCurrentBond: Bond = match this.currentBondType with
-                                           | None -> Bond.fromBondType BondType.Single
-                                           | Some bt -> Bond.fromBondType bt                                          
+    member this.getCurrentBond: BondData = match this.currentBondType with
+                                           | None -> BondData.fromBondType BondType.Single
+                                           | Some bt -> BondData.fromBondType bt                                          
     member this.addAtomDefault a =
         match this.connectID with
         | Some connectTo ->
             let connectAtom = tryGetNodeData connectTo this.mol
             let bondType = if this.currentBondType.IsNone && connectAtom.Value.IsAromatic && a.IsAromatic then BondType.Aromatic else this.getCurrentBond.Type
             let newMol, newItems = if this.ez.IsNone then
-                                       (addNodeToNode a connectTo (Bond.fromBondType bondType) this.mol)
+                                       (addNodeToNode a connectTo (BondData.fromBondType bondType) this.mol)
                                    else
                                        let direction = match this.ez with
                                                         | Some 1 -> BondDirection.CisTrans1
                                                         | Some 2 -> BondDirection.CisTrans2
                                                         | _ -> BondDirection.NoDirection
-                                       (addNodeToNode a connectTo {Bond.Type = bondType; Conjugated=false; Direction=direction} this.mol)
+                                       (addNodeToNode a connectTo { BondData.Type = bondType; Conjugated=false; Direction=direction} this.mol)
                 
             this.mol <- newMol
             match newItems with
@@ -78,17 +78,17 @@ type ParseState = {
         match this.ringConnect.ContainsKey ringID with
         | true ->
             let rc = this.ringConnect[ringID]
-            let bondType = if this.currentBondType.IsNone && this.mol.NodeData[rc.atomId].IsAromatic && this.mol.NodeData[this.connectID.Value].IsAromatic then BondType.Aromatic else this.getCurrentBond.Type
-            let edge = {nodes=NodeIDSet.construct rc.atomId this.connectID.Value; edgeData=Bond.fromBondType bondType}
+            let bondType = if this.currentBondType.IsNone && this.mol.Nodes[rc.atomId].IsAromatic && this.mol.Nodes[this.connectID.Value].IsAromatic then BondType.Aromatic else this.getCurrentBond.Type
+            let edge = {nodes=NodeIDSet.construct rc.atomId this.connectID.Value; edgeData=BondData.fromBondType bondType}
             let newMol = addEdge edge this.mol
             this.mol <- newMol
         | false -> raise (IndexOutOfRangeException($"Trying to close ring with id {ringID} that isn't open"))
 
-let aliphatic_organic: Parser<Atom, ParseState> =  %[ "Cl"; "Br"; "B"; "C"; "N"; "O"; "S"; "P"; "F"; "I" ] |>>
-                                                   (fun s -> {Atom.Default with Element =(stringToElement s); IsAromatic=false})
+let aliphatic_organic: Parser<AtomData, ParseState> =  %[ "Cl"; "Br"; "B"; "C"; "N"; "O"; "S"; "P"; "F"; "I" ] |>>
+                                                       (fun s -> { AtomData.Default with Element =(stringToElement s); IsAromatic=false})
     
-let aromatic_organic: Parser<Atom, ParseState> = %["b"; "c"; "n"; "o"; "s"; "p"] |>>
-                                                 (fun s -> {Atom.Default with Element =(stringToElement s); IsAromatic=true})
+let aromatic_organic: Parser<AtomData, ParseState> = %["b"; "c"; "n"; "o"; "s"; "p"] |>>
+                                                     (fun s -> { AtomData.Default with Element =(stringToElement s); IsAromatic=true})
 
 let ws: Parser<unit, ParseState> = spaces
 
@@ -119,7 +119,7 @@ let symbol  = %(
 
 
 
-let bracket_atom: Parser<Atom, ParseState>  =
+let bracket_atom: Parser<AtomData, ParseState>  =
     %% "["
     -- +. isotope
     -- +. symbol
@@ -128,7 +128,8 @@ let bracket_atom: Parser<Atom, ParseState>  =
     -- +. opt charge
     -- +. atom_class
     -- "]"
-    -%> fun isotope symbol chiral hCount charge sClass   -> {Atom.Isotope=isotope
+    -%> fun isotope symbol chiral hCount charge sClass   -> {
+                                                             Isotope=isotope
                                                              Element=fst symbol
                                                              Chirality=chiral
                                                              Hydrogens=Option.defaultValue 0 hCount
@@ -136,7 +137,7 @@ let bracket_atom: Parser<Atom, ParseState>  =
                                                              ImplicitHydrogens=0
                                                              AtomClass=sClass
                                                              IsAromatic=snd symbol
-                                                             Hybridization=None 
+                                                             Hybridization=None
                                                              }
 
 let changeState  f p =
